@@ -9,16 +9,18 @@ from glob import glob
 import json
 import linecache
 import logging
+import multiprocessing
 import os
 import signal
+import string
 import sys
-import time
 import threading
-import multiprocessing
+import time
+from urllib.parse import urlparse, urlunparse
 
 # Import Senzing libraries.
-
 try:
+    from G2ConfigMgr import G2ConfigMgr
     from G2Engine import G2Engine
     import G2Exception
 except ImportError:
@@ -27,7 +29,7 @@ except ImportError:
 __all__ = []
 __version__ = "1.0.0"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2020-01-16'
+__updated__ = '2020-01-17'
 
 SENZING_PRODUCT_ID = "5010"  # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 log_format = '%(asctime)s %(message)s'
@@ -37,6 +39,12 @@ log_format = '%(asctime)s %(message)s'
 KILOBYTES = 1024
 MEGABYTES = 1024 * KILOBYTES
 GIGABYTES = 1024 * MEGABYTES
+
+# Lists from https://www.ietf.org/rfc/rfc1738.txt
+
+safe_character_list = ['$', '-', '_', '.', '+', '!', '*', '(', ')', ',', '"' ] + list(string.ascii_letters)
+unsafe_character_list = [ '"', '<', '>', '#', '%', '{', '}', '|', '\\', '^', '~', '[', ']', '`']
+reserved_character_list = [ ';', ',', '/', '?', ':', '@', '=', '&']
 
 # The "configuration_locator" describes where configuration variables are in:
 # 1) Command line options, 2) Environment variables, 3) Configuration files, 4) Default values
@@ -111,7 +119,8 @@ configuration_locator = {
 # Enumerate keys in 'configuration_locator' that should not be printed to the log.
 
 keys_to_redact = [
-    "password",
+    "g2_database_url_generic",
+    "g2_database_url_specific"
 ]
 
 # -----------------------------------------------------------------------------
@@ -130,17 +139,7 @@ def get_parser():
                     "dest": "debug",
                     "action": "store_true",
                     "help": "Enable debugging. (SENZING_DEBUG) Default: False"
-                },
-                "--password": {
-                    "dest": "password",
-                    "metavar": "SENZING_PASSWORD",
-                    "help": "Example of information redacted in the log. Default: None"
-                },
-                "--senzing-dir": {
-                    "dest": "senzing_dir",
-                    "metavar": "SENZING_DIR",
-                    "help": "Location of Senzing. Default: /opt/senzing"
-                },
+                }
             },
         },
         'sleep': {
@@ -191,9 +190,10 @@ MESSAGE_DEBUG = 900
 
 message_dictionary = {
     "100": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}I",
-    "101": "Added message to mock queue: {0}",
-    "101": "Added message to Kafka topic: {0}",
-    "101": "Added message to RabbitMQ queue: {0}",
+    "101": "Added message to internal queue: {0}",
+    "102": "Processing message: {0}",
+    "129": "{0} is running.",
+    "130": "{0} has exited.",
     "292": "Configuration change detected.  Old: {0} New: {1}",
     "293": "For information on warnings and errors, see https://github.com/Senzing/stream-loader#errors",
     "294": "Version: {0}  Updated: {1}",
@@ -211,7 +211,7 @@ message_dictionary = {
     "698": "Program terminated with error.",
     "699": "{0}",
     "700": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}E",
-    "701": "License has expired.",
+    "701": "G2Engine.getRedoRecord() bad return code: {0}",
     "885": "License has expired.",
     "886": "G2Engine.addRecord() bad return code: {0}; JSON: {1}",
     "888": "G2Engine.addRecord() G2ModuleNotInitialized: {0}; JSON: {1}",
@@ -276,8 +276,132 @@ def get_exception():
     }
 
 # -----------------------------------------------------------------------------
+# Database URL parsing
+# -----------------------------------------------------------------------------
+
+
+def translate(map, astring):
+    new_string = str(astring)
+    for key, value in map.items():
+        new_string = new_string.replace(key, value)
+    return new_string
+
+
+def get_unsafe_characters(astring):
+    result = []
+    for unsafe_character in unsafe_character_list:
+        if unsafe_character in astring:
+            result.append(unsafe_character)
+    return result
+
+
+def get_safe_characters(astring):
+    result = []
+    for safe_character in safe_character_list:
+        if safe_character not in astring:
+            result.append(safe_character)
+    return result
+
+
+def parse_database_url(original_senzing_database_url):
+    ''' Given a canonical database URL, decompose into URL components. '''
+
+    result = {}
+
+    # Get the value of SENZING_DATABASE_URL environment variable.
+
+    senzing_database_url = original_senzing_database_url
+
+    # Create lists of safe and unsafe characters.
+
+    unsafe_characters = get_unsafe_characters(senzing_database_url)
+    safe_characters = get_safe_characters(senzing_database_url)
+
+    # Detect an error condition where there are not enough safe characters.
+
+    if len(unsafe_characters) > len(safe_characters):
+        logging.error(message_error(730, unsafe_characters, safe_characters))
+        return result
+
+    # Perform translation.
+    # This makes a map of safe character mapping to unsafe characters.
+    # "senzing_database_url" is modified to have only safe characters.
+
+    translation_map = {}
+    safe_characters_index = 0
+    for unsafe_character in unsafe_characters:
+        safe_character = safe_characters[safe_characters_index]
+        safe_characters_index += 1
+        translation_map[safe_character] = unsafe_character
+        senzing_database_url = senzing_database_url.replace(unsafe_character, safe_character)
+
+    # Parse "translated" URL.
+
+    parsed = urlparse(senzing_database_url)
+    schema = parsed.path.strip('/')
+
+    # Construct result.
+
+    result = {
+        'scheme': translate(translation_map, parsed.scheme),
+        'netloc': translate(translation_map, parsed.netloc),
+        'path': translate(translation_map, parsed.path),
+        'params': translate(translation_map, parsed.params),
+        'query': translate(translation_map, parsed.query),
+        'fragment': translate(translation_map, parsed.fragment),
+        'username': translate(translation_map, parsed.username),
+        'password': translate(translation_map, parsed.password),
+        'hostname': translate(translation_map, parsed.hostname),
+        'port': translate(translation_map, parsed.port),
+        'schema': translate(translation_map, schema),
+    }
+
+    # For safety, compare original URL with reconstructed URL.
+
+    url_parts = [
+        result.get('scheme'),
+        result.get('netloc'),
+        result.get('path'),
+        result.get('params'),
+        result.get('query'),
+        result.get('fragment'),
+    ]
+    test_senzing_database_url = urlunparse(url_parts)
+    if test_senzing_database_url != original_senzing_database_url:
+        logging.warning(message_warning(891, original_senzing_database_url, test_senzing_database_url))
+
+    # Return result.
+
+    return result
+
+# -----------------------------------------------------------------------------
 # Configuration
 # -----------------------------------------------------------------------------
+
+
+def get_g2_database_url_specific(generic_database_url):
+    ''' Given a canonical database URL, transform to the specific URL. '''
+
+    result = ""
+    parsed_database_url = parse_database_url(generic_database_url)
+    scheme = parsed_database_url.get('scheme')
+
+    # Format database URL for a particular database.
+
+    if scheme in ['mysql']:
+        result = "{scheme}://{username}:{password}@{hostname}:{port}/?schema={schema}".format(**parsed_database_url)
+    elif scheme in ['postgresql']:
+        result = "{scheme}://{username}:{password}@{hostname}:{port}:{schema}/".format(**parsed_database_url)
+    elif scheme in ['db2']:
+        result = "{scheme}://{username}:{password}@{schema}".format(**parsed_database_url)
+    elif scheme in ['sqlite3']:
+        result = "{scheme}://{netloc}{path}".format(**parsed_database_url)
+    elif scheme in ['mssql']:
+        result = "{scheme}://{username}:{password}@{schema}".format(**parsed_database_url)
+    else:
+        logging.error(message_error(695, scheme, generic_database_url))
+
+    return result
 
 
 def get_configuration(args):
@@ -339,6 +463,10 @@ def get_configuration(args):
         integer_string = result.get(integer)
         result[integer] = int(integer_string)
 
+    # Special case:  Tailored database URL
+
+    result['g2_database_url_specific'] = get_g2_database_url_specific(result.get("g2_database_url_generic"))
+
     return result
 
 
@@ -347,6 +475,9 @@ def validate_configuration(config):
 
     user_warning_messages = []
     user_error_messages = []
+
+    if not config.get('g2_database_url_generic'):
+        user_error_messages.append(message_error(551))
 
     # Perform subcommand specific checking.
 
@@ -425,7 +556,7 @@ class ReadRedoQueueThread(threading.Thread):
                 exit_error(888, err, redo_record_bytearray.decode())
             except Exception as err:
                 raise err
-            if return_code != 0:
+            if return_code:
                 exit_error(701, return_code)
 
             # If redo record was not received, sleep and try again.
@@ -442,8 +573,19 @@ class ReadRedoQueueThread(threading.Thread):
     def run(self):
         '''Get redo records from Senzing.  Put redo records in internal queue.'''
 
+        # Show that thread is starting in the log.
+
+        logging.info(message_info(129, threading.current_thread().name))
+
+        # Transfer messages from Senzing to internal queue.
+
         for redo_record in self.redo_records():
+            logging.info(message_info(101, redo_record))
             self.redo_queue.put(redo_record)
+
+        # Log message for thread exiting.
+
+        logging.info(message_info(130, threading.current_thread().name))
 
 # -----------------------------------------------------------------------------
 # Class: ProcessRedoQueueThread
@@ -466,8 +608,17 @@ class ProcessRedoQueueThread(threading.Thread):
 
     def run(self):
         '''Process Senzing redo records.'''
+
+        # Show that thread is starting in the log.
+
+        logging.info(message_info(129, threading.current_thread().name))
+
+        # Process redo records.
+
         return_code = 0
         for redo_record in self.redo_records():
+
+            logging.info(message_info(102, redo_record))
 
             try:
                 return_code = self.g2_engine.process(redo_record)
@@ -476,9 +627,13 @@ class ProcessRedoQueueThread(threading.Thread):
             except G2Exception.G2ModuleGenericException as err:
                 exit_error(888, err, redo_record_bytearray.decode())
             except Exception as err:
-                exit_error(701, return_code)
-            if return_code != 0:
-                exit_error(701, return_code)
+                exit_error(702, err)
+            if return_code:
+                exit_error(703, return_code)
+
+        # Log message for thread exiting.
+
+        logging.info(message_info(130, threading.current_thread().name))
 
 # -----------------------------------------------------------------------------
 # Utility functions
