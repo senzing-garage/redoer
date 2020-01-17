@@ -4,8 +4,8 @@
 # redoer.py
 # -----------------------------------------------------------------------------
 
-from glob import glob
 import argparse
+from glob import glob
 import json
 import linecache
 import logging
@@ -13,13 +13,23 @@ import os
 import signal
 import sys
 import time
+import threading
+import multiprocessing
+
+# Import Senzing libraries.
+
+try:
+    from G2Engine import G2Engine
+    import G2Exception
+except ImportError:
+    pass
 
 __all__ = []
 __version__ = "1.0.0"  # See https://www.python.org/dev/peps/pep-0396/
-__date__ = '2019-07-16'
-__updated__ = '2020-01-15'
+__date__ = '2020-01-15'
+__updated__ = '2020-01-16'
 
-SENZING_PRODUCT_ID = "5xxx"  # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
+SENZING_PRODUCT_ID = "5010"  # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 log_format = '%(asctime)s %(message)s'
 
 # Working with bytes.
@@ -32,15 +42,45 @@ GIGABYTES = 1024 * MEGABYTES
 # 1) Command line options, 2) Environment variables, 3) Configuration files, 4) Default values
 
 configuration_locator = {
+    "config_path": {
+        "default": "/etc/opt/senzing",
+        "env": "SENZING_CONFIG_PATH",
+        "cli": "config-path"
+    },
     "debug": {
         "default": False,
         "env": "SENZING_DEBUG",
         "cli": "debug"
     },
+    "engine_configuration_json": {
+        "default": None,
+        "env": "SENZING_ENGINE_CONFIGURATION_JSON",
+        "cli": "engine-configuration-json"
+    },
+    "g2_database_url_generic": {
+        "default": "sqlite3://na:na@/var/opt/senzing/sqlite/G2C.db",
+        "env": "SENZING_DATABASE_URL",
+        "cli": "database-url"
+    },
     "password": {
         "default": None,
         "env": "SENZING_PASSWORD",
         "cli": "password"
+    },
+    "queue_maxsize": {
+        "default": 10,
+        "env": "SENZING_QUEUE_MAX_SIZE",
+        "cli": "queue-max-size"
+    },
+    "redo_sleep_time_in_seconds": {
+        "default": 60,
+        "env": "SENZING_REDO_SLEEP_TIME_IN_SECONDS",
+        "cli": "sleep-time-in-seconds"
+    },
+    "resource_path": {
+        "default": "/opt/senzing/g2/resources",
+        "env": "SENZING_RESOURCE_PATH",
+        "cli": "resource-path"
     },
     "senzing_dir": {
         "default": "/opt/senzing",
@@ -55,6 +95,16 @@ configuration_locator = {
     "subcommand": {
         "default": None,
         "env": "SENZING_SUBCOMMAND",
+    },
+    "support_path": {
+        "default": "/opt/senzing/data",
+        "env": "SENZING_SUPPORT_PATH",
+        "cli": "support-path"
+    },
+    "threads_per_process": {
+        "default": 4,
+        "env": "SENZING_THREADS_PER_PROCESS",
+        "cli": "threads-per-process",
     }
 }
 
@@ -73,28 +123,8 @@ def get_parser():
     ''' Parse commandline arguments. '''
 
     subcommands = {
-        'task1': {
+        'redo': {
             "help": 'Example task #1.',
-            "arguments": {
-                "--debug": {
-                    "dest": "debug",
-                    "action": "store_true",
-                    "help": "Enable debugging. (SENZING_DEBUG) Default: False"
-                },
-                "--password": {
-                    "dest": "password",
-                    "metavar": "SENZING_PASSWORD",
-                    "help": "Example of information redacted in the log. Default: None"
-                },
-                "--senzing-dir": {
-                    "dest": "senzing_dir",
-                    "metavar": "SENZING_DIR",
-                    "help": "Location of Senzing. Default: /opt/senzing"
-                },
-            },
-        },
-        'task2': {
-            "help": 'Example task #2.',
             "arguments": {
                 "--debug": {
                     "dest": "debug",
@@ -161,6 +191,9 @@ MESSAGE_DEBUG = 900
 
 message_dictionary = {
     "100": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}I",
+    "101": "Added message to mock queue: {0}",
+    "101": "Added message to Kafka topic: {0}",
+    "101": "Added message to RabbitMQ queue: {0}",
     "292": "Configuration change detected.  Old: {0} New: {1}",
     "293": "For information on warnings and errors, see https://github.com/Senzing/stream-loader#errors",
     "294": "Version: {0}  Updated: {1}",
@@ -178,6 +211,7 @@ message_dictionary = {
     "698": "Program terminated with error.",
     "699": "{0}",
     "700": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}E",
+    "701": "License has expired.",
     "885": "License has expired.",
     "886": "G2Engine.addRecord() bad return code: {0}; JSON: {1}",
     "888": "G2Engine.addRecord() G2ModuleNotInitialized: {0}; JSON: {1}",
@@ -298,6 +332,7 @@ def get_configuration(args):
     # Special case: Change integer strings to integers.
 
     integers = [
+        'redo_sleep_time_in_seconds',
         'sleep_time_in_seconds'
     ]
     for integer in integers:
@@ -352,6 +387,98 @@ def redact_configuration(config):
         except:
             pass
     return result
+
+# -----------------------------------------------------------------------------
+# Class: ReadRedoQueueThread
+# -----------------------------------------------------------------------------
+
+
+class ReadRedoQueueThread(threading.Thread):
+
+    def __init__(self, config, g2_engine, redo_queue):
+        threading.Thread.__init__(self)
+        self.config = config
+        self.g2_engine = g2_engine
+        self.redo_queue = redo_queue
+
+    def redo_records(self):
+        '''A generator for producing Senzing redo records.'''
+
+        # Pull values from configuration.
+
+        redo_sleep_time_in_seconds = self.config.get('redo_sleep_time_in_seconds')
+
+        # Initialize variables.
+
+        redo_record_bytearray = bytearray()
+        return_code = 0
+
+        # Read forever.
+
+        while True:
+
+            # Read a Senzing redo record.
+
+            try:
+                return_code = self.g2_engine.getRedoRecord(redo_record_bytearray)
+            except G2Exception.G2ModuleNotInitialized as err:
+                exit_error(888, err, redo_record_bytearray.decode())
+            except Exception as err:
+                raise err
+            if return_code != 0:
+                exit_error(701, return_code)
+
+            # If redo record was not received, sleep and try again.
+
+            redo_record = redo_record_bytearray.decode()
+            if not redo_record:
+                time.sleep(redo_sleep_time_in_seconds)
+                continue
+
+            # Return generator value.
+
+            yield redo_record
+
+    def run(self):
+        '''Get redo records from Senzing.  Put redo records in internal queue.'''
+
+        for redo_record in self.redo_records():
+            self.redo_queue.put(redo_record)
+
+# -----------------------------------------------------------------------------
+# Class: ProcessRedoQueueThread
+# -----------------------------------------------------------------------------
+
+
+class ProcessRedoQueueThread(threading.Thread):
+
+    def __init__(self, config, g2_engine, g2_configuration_manager, redo_queue):
+        threading.Thread.__init__(self)
+        self.config = config
+        self.g2_engine = g2_engine
+        self.g2_configuration_manager = g2_configuration_manager
+        self.redo_queue = redo_queue
+
+    def redo_records(self):
+        '''Generator that produces Senzing redo records.'''
+        while True:
+            yield self.redo_queue.get()
+
+    def run(self):
+        '''Process Senzing redo records.'''
+        return_code = 0
+        for redo_record in self.redo_records():
+
+            try:
+                return_code = self.g2_engine.process(redo_record)
+            except G2Exception.G2ModuleNotInitialized as err:
+                exit_error(888, err, redo_record_bytearray.decode())
+            except G2Exception.G2ModuleGenericException as err:
+                exit_error(888, err, redo_record_bytearray.decode())
+            except Exception as err:
+                exit_error(701, return_code)
+            if return_code != 0:
+                exit_error(701, return_code)
 
 # -----------------------------------------------------------------------------
 # Utility functions
@@ -412,6 +539,98 @@ def exit_silently():
     sys.exit(0)
 
 # -----------------------------------------------------------------------------
+# Senzing configuration.
+# -----------------------------------------------------------------------------
+
+
+def get_g2_configuration_dictionary(config):
+    ''' Construct a dictionary in the form of the old ini files. '''
+    result = {
+        "PIPELINE": {
+            "CONFIGPATH": config.get("config_path"),
+            "RESOURCEPATH": config.get("resource_path"),
+            "SUPPORTPATH": config.get("support_path"),
+        },
+        "SQL": {
+            "CONNECTION": config.get("g2_database_url_specific"),
+        }
+    }
+    return result
+
+
+def get_g2_configuration_json(config):
+    result = ""
+    if config.get('engine_configuration_json'):
+        result = config.get('engine_configuration_json')
+    else:
+        result = json.dumps(get_g2_configuration_dictionary(config))
+    return result
+
+# -----------------------------------------------------------------------------
+# Senzing services.
+# -----------------------------------------------------------------------------
+
+
+def Xget_g2_config(config, g2_config_name="loader-G2-config"):
+    '''Get the G2Config resource.'''
+    try:
+        g2_configuration_json = get_g2_configuration_json(config)
+        result = G2Config()
+        result.initV2(g2_config_name, g2_configuration_json, config.get('debug', False))
+    except G2Exception.G2ModuleException as err:
+        exit_error(897, g2_configuration_json, err)
+    return result
+
+
+def get_g2_configuration_manager(config, g2_configuration_manager_name="loader-G2-configuration-manager"):
+    '''Get the G2Config resource.'''
+    try:
+        g2_configuration_json = get_g2_configuration_json(config)
+        result = G2ConfigMgr()
+        result.initV2(g2_configuration_manager_name, g2_configuration_json, config.get('debug', False))
+    except G2Exception.G2ModuleException as err:
+        exit_error(896, g2_configuration_json, err)
+    return result
+
+
+def Xget_g2_diagnostic(config, g2_diagnostic_name="loader-G2-diagnostic"):
+    '''Get the G2Diagnostic resource.'''
+    try:
+        g2_configuration_json = get_g2_configuration_json(config)
+        result = G2Diagnostic()
+        result.initV2(g2_diagnostic_name, g2_configuration_json, config.get('debug', False))
+    except G2Exception.G2ModuleException as err:
+        exit_error(894, g2_configuration_json, err)
+    return result
+
+
+def get_g2_engine(config, g2_engine_name="loader-G2-engine"):
+    '''Get the G2Engine resource.'''
+    try:
+        g2_configuration_json = get_g2_configuration_json(config)
+        result = G2Engine()
+        result.initV2(g2_engine_name, g2_configuration_json, config.get('debug', False))
+        config['last_configuration_check'] = time.time()
+    except G2Exception.G2ModuleException as err:
+        exit_error(898, g2_configuration_json, err)
+    return result
+
+
+def Xget_g2_product(config, g2_product_name="loader-G2-product"):
+    '''Get the G2Product resource.'''
+    try:
+        g2_configuration_json = get_g2_configuration_json(config)
+        result = G2Product()
+        result.initV2(g2_product_name, g2_configuration_json, config.get('debug'))
+    except G2Exception.G2ModuleException as err:
+        exit_error(892, config.get('g2project_ini'), err)
+    return result
+
+# -----------------------------------------------------------------------------
+# Utility functions
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
 # do_* functions
 #   Common function signature: do_XXX(args)
 # -----------------------------------------------------------------------------
@@ -433,41 +652,62 @@ def do_docker_acceptance_test(args):
     logging.info(exit_template(config))
 
 
-def do_task1(args):
-    ''' Do a task. '''
+def do_redo(args):
+    ''' Process Senzing's Redo queue. '''
 
     # Get context from CLI, environment variables, and ini files.
 
     config = get_configuration(args)
+    validate_configuration(config)
 
     # Prolog.
 
     logging.info(entry_template(config))
 
-    # Do work.
+    # Pull values from configuration.
 
-    print("senzing-dir: {senzing_dir}; debug: {debug}".format(**config))
+    threads_per_process = config.get('threads_per_process')
+    queue_maxsize = config.get('queue_maxsize')
 
-    # Epilog.
+    # Create Queue.
 
-    logging.info(exit_template(config))
+    redo_queue = multiprocessing.Queue(queue_maxsize)
 
+    # Get the Senzing G2 resources.
 
-def do_task2(args):
-    ''' Do a task. Print the complete config object'''
+    g2_engine = get_g2_engine(config)
+    g2_configuration_manager = get_g2_configuration_manager(config)
 
-    # Get context from CLI, environment variables, and ini files.
+    # Create redo record reader threads for master process.
 
-    config = get_configuration(args)
+    threads = []
 
-    # Prolog.
+    # Add a single thread for reading from Senzing Redo queue and placing on internal queue.
 
-    logging.info(entry_template(config))
+    thread = ReadRedoQueueThread(config, g2_engine, redo_queue)
+    thread.name = "ReadRedoQueue-0-thread-1"
+    threads.append(thread)
 
-    # Do work.
+    # Add a number of threads for processing Redo records from internal queue.
 
-    config_json = json.dumps(config, sort_keys=True, indent=4)
-    print(config_json)
+    for i in range(0, threads_per_process):
+        thread = ProcessRedoQueueThread(config, g2_engine, g2_configuration_manager, redo_queue)
+        thread.name = "ProcessRedoQueue-0-thread-{0}".format(i)
+        threads.append(thread)
+
+    # Start threads.
+
+    for thread in threads:
+        thread.start()
+
+    # Collect inactive threads from master process.
+
+    for thread in threads:
+        thread.join()
+
+    # Cleanup.
+
+    g2_engine.destroy()
 
     # Epilog.
 
