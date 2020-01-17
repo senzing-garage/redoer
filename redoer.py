@@ -135,10 +135,15 @@ def get_parser():
         'redo': {
             "help": 'Example task #1.',
             "arguments": {
-                "--debug": {
-                    "dest": "debug",
-                    "action": "store_true",
-                    "help": "Enable debugging. (SENZING_DEBUG) Default: False"
+                "--engine-configuration-json": {
+                    "dest": "engine_configuration_json",
+                    "metavar": "SENZING_ENGINE_CONFIGURATION_JSON",
+                    "help": "Advanced Senzing engine configuration. Default: none"
+                },
+                "--threads-per-process": {
+                    "dest": "threads_per_process",
+                    "metavar": "SENZING_THREADS_PER_PROCESS",
+                    "help": "Number of threads per process. Default: 4"
                 }
             },
         },
@@ -190,8 +195,6 @@ MESSAGE_DEBUG = 900
 
 message_dictionary = {
     "100": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}I",
-    "101": "Added message to internal queue: {0}",
-    "102": "Processing message: {0}",
     "129": "{0} is running.",
     "130": "{0} has exited.",
     "292": "Configuration change detected.  Old: {0} New: {1}",
@@ -212,6 +215,13 @@ message_dictionary = {
     "699": "{0}",
     "700": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}E",
     "701": "G2Engine.getRedoRecord() bad return code: {0}",
+    "702": "G2Engine.getRedoRecord() G2ModuleNotInitialized: {0} XML: {1}",
+    "703": "G2Engine.getRedoRecord() err: {0}",
+    "706": "G2Engine.process() bad return code: {0}",
+    "707": "G2Engine.process() G2ModuleNotInitialized: {0} XML: {1}",
+    "708": "G2Engine.process() G2ModuleGenericException: {0} XML: {1}",
+    "709": "G2Engine.process() err: {0}",
+    "730": "There are not enough safe characters to do the translation. Unsafe Characters: {0}; Safe Characters: {1}",
     "885": "License has expired.",
     "886": "G2Engine.addRecord() bad return code: {0}; JSON: {1}",
     "888": "G2Engine.addRecord() G2ModuleNotInitialized: {0}; JSON: {1}",
@@ -227,6 +237,9 @@ message_dictionary = {
     "898": "Could not initialize G2Engine with '{0}'. Error: {1}",
     "899": "{0}",
     "900": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}D",
+    "902": "Thread: {0} Added message to internal queue: {1}",
+    "903": "Thread: {0} Processing message: {1}",
+    "998": "Debugging enabled.",
     "999": "{0}",
 }
 
@@ -553,9 +566,9 @@ class ReadRedoQueueThread(threading.Thread):
             try:
                 return_code = self.g2_engine.getRedoRecord(redo_record_bytearray)
             except G2Exception.G2ModuleNotInitialized as err:
-                exit_error(888, err, redo_record_bytearray.decode())
+                exit_error(702, err, redo_record_bytearray.decode())
             except Exception as err:
-                raise err
+                exit_error(703, err)
             if return_code:
                 exit_error(701, return_code)
 
@@ -580,7 +593,7 @@ class ReadRedoQueueThread(threading.Thread):
         # Transfer messages from Senzing to internal queue.
 
         for redo_record in self.redo_records():
-            logging.info(message_info(101, redo_record))
+            logging.debug(message_debug(902, threading.current_thread().name, redo_record))
             self.redo_queue.put(redo_record)
 
         # Log message for thread exiting.
@@ -601,6 +614,37 @@ class ProcessRedoQueueThread(threading.Thread):
         self.g2_configuration_manager = g2_configuration_manager
         self.redo_queue = redo_queue
 
+    def is_g2_default_configuration_changed(self):
+
+        # Get active Configuration ID being used by g2_engine.
+
+        active_config_id = bytearray()
+        self.g2_engine.getActiveConfigID(active_config_id)
+
+        # Get most current Configuration ID from G2 database.
+
+        default_config_id = bytearray()
+        self.g2_configuration_manager.getDefaultConfigID(default_config_id)
+
+        # Determine if configuration has changed.
+
+        result = active_config_id != default_config_id
+        if result:
+            logging.info(message_info(292, active_config_id.decode(), default_config_id.decode()))
+
+        return result
+
+    def update_active_g2_configuration(self):
+
+        # Get most current Configuration ID from G2 database.
+
+        default_config_id = bytearray()
+        self.g2_configuration_manager.getDefaultConfigID(default_config_id)
+
+        # Apply new configuration to g2_engine.
+
+        self.g2_engine.reinitV2(default_config_id)
+
     def redo_records(self):
         '''Generator that produces Senzing redo records.'''
         while True:
@@ -608,6 +652,11 @@ class ProcessRedoQueueThread(threading.Thread):
 
     def run(self):
         '''Process Senzing redo records.'''
+
+        # FIXME:
+
+        print(self.is_g2_default_configuration_changed())
+        self.update_active_g2_configuration()
 
         # Show that thread is starting in the log.
 
@@ -618,18 +667,22 @@ class ProcessRedoQueueThread(threading.Thread):
         return_code = 0
         for redo_record in self.redo_records():
 
-            logging.info(message_info(102, redo_record))
+            logging.debug(message_debug(903, threading.current_thread().name, redo_record))
 
             try:
                 return_code = self.g2_engine.process(redo_record)
             except G2Exception.G2ModuleNotInitialized as err:
-                exit_error(888, err, redo_record_bytearray.decode())
+                exit_error(707, err, redo_record_bytearray.decode())
             except G2Exception.G2ModuleGenericException as err:
-                exit_error(888, err, redo_record_bytearray.decode())
+                exit_error(708, err, redo_record_bytearray.decode())
             except Exception as err:
-                exit_error(702, err)
+                if self.is_g2_default_configuration_changed():
+                    self.update_active_g2_configuration()
+                    return_code = self.g2_engine.process(redo_record)
+                else:
+                    exit_error(709, err)
             if return_code:
-                exit_error(703, return_code)
+                exit_error(706, return_code)
 
         # Log message for thread exiting.
 
@@ -726,17 +779,6 @@ def get_g2_configuration_json(config):
 # -----------------------------------------------------------------------------
 
 
-def Xget_g2_config(config, g2_config_name="loader-G2-config"):
-    '''Get the G2Config resource.'''
-    try:
-        g2_configuration_json = get_g2_configuration_json(config)
-        result = G2Config()
-        result.initV2(g2_config_name, g2_configuration_json, config.get('debug', False))
-    except G2Exception.G2ModuleException as err:
-        exit_error(897, g2_configuration_json, err)
-    return result
-
-
 def get_g2_configuration_manager(config, g2_configuration_manager_name="loader-G2-configuration-manager"):
     '''Get the G2Config resource.'''
     try:
@@ -745,17 +787,6 @@ def get_g2_configuration_manager(config, g2_configuration_manager_name="loader-G
         result.initV2(g2_configuration_manager_name, g2_configuration_json, config.get('debug', False))
     except G2Exception.G2ModuleException as err:
         exit_error(896, g2_configuration_json, err)
-    return result
-
-
-def Xget_g2_diagnostic(config, g2_diagnostic_name="loader-G2-diagnostic"):
-    '''Get the G2Diagnostic resource.'''
-    try:
-        g2_configuration_json = get_g2_configuration_json(config)
-        result = G2Diagnostic()
-        result.initV2(g2_diagnostic_name, g2_configuration_json, config.get('debug', False))
-    except G2Exception.G2ModuleException as err:
-        exit_error(894, g2_configuration_json, err)
     return result
 
 
@@ -768,17 +799,6 @@ def get_g2_engine(config, g2_engine_name="loader-G2-engine"):
         config['last_configuration_check'] = time.time()
     except G2Exception.G2ModuleException as err:
         exit_error(898, g2_configuration_json, err)
-    return result
-
-
-def Xget_g2_product(config, g2_product_name="loader-G2-product"):
-    '''Get the G2Product resource.'''
-    try:
-        g2_configuration_json = get_g2_configuration_json(config)
-        result = G2Product()
-        result.initV2(g2_product_name, g2_configuration_json, config.get('debug'))
-    except G2Exception.G2ModuleException as err:
-        exit_error(892, config.get('g2project_ini'), err)
     return result
 
 # -----------------------------------------------------------------------------
@@ -824,7 +844,7 @@ def do_redo(args):
     threads_per_process = config.get('threads_per_process')
     queue_maxsize = config.get('queue_maxsize')
 
-    # Create Queue.
+    # Create internal Queue.
 
     redo_queue = multiprocessing.Queue(queue_maxsize)
 
@@ -833,7 +853,7 @@ def do_redo(args):
     g2_engine = get_g2_engine(config)
     g2_configuration_manager = get_g2_configuration_manager(config)
 
-    # Create redo record reader threads for master process.
+    # Create threads for master process.
 
     threads = []
 
@@ -928,6 +948,7 @@ if __name__ == "__main__":
     log_level_parameter = os.getenv("SENZING_LOG_LEVEL", "info").lower()
     log_level = log_level_map.get(log_level_parameter, logging.INFO)
     logging.basicConfig(format=log_format, level=log_level)
+    logging.debug(message_debug(998))
 
     # Trap signals temporarily until args are parsed.
 
