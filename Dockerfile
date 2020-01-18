@@ -1,7 +1,7 @@
 ARG BASE_IMAGE=senzing/senzing-base:1.3.0
 FROM ${BASE_IMAGE}
 
-ENV REFRESHED_AT=2019-11-13
+ENV REFRESHED_AT=2020-01-18
 
 LABEL Name="senzing/redoer" \
       Maintainer="support@senzing.com" \
@@ -18,6 +18,8 @@ USER root
 # Copy files from repository.
 
 COPY ./rootfs /
+COPY ./redoer.py /app/
+
 
 # Make non-root container.
 
@@ -25,5 +27,7 @@ USER 1001
 
 # Runtime execution.
 
+ENV SENZING_DOCKER_LAUNCHED=true
+
 WORKDIR /app
-CMD ["/app/sleep-infinity.sh"]
+ENTRYPOINT ["/app/redoer.py"]
