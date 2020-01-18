@@ -5,6 +5,7 @@
 # -----------------------------------------------------------------------------
 
 import argparse
+import datetime
 from glob import glob
 import json
 import linecache
@@ -22,6 +23,7 @@ from urllib.parse import urlparse, urlunparse
 try:
     from G2ConfigMgr import G2ConfigMgr
     from G2Engine import G2Engine
+    from G2Product import G2Product
     import G2Exception
 except ImportError:
     pass
@@ -65,15 +67,25 @@ configuration_locator = {
         "env": "SENZING_ENGINE_CONFIGURATION_JSON",
         "cli": "engine-configuration-json"
     },
+    "expiration_warning_in_days": {
+        "default": 30,
+        "env": "SENZING_EXPIRATION_WARNING_IN_DAYS",
+        "cli": "expiration-warning-in-days"
+    },
     "g2_database_url_generic": {
         "default": "sqlite3://na:na@/var/opt/senzing/sqlite/G2C.db",
         "env": "SENZING_DATABASE_URL",
         "cli": "database-url"
     },
-    "password": {
-        "default": None,
-        "env": "SENZING_PASSWORD",
-        "cli": "password"
+    "log_license_period_in_seconds": {
+        "default": 60 * 60 * 24,
+        "env": "SENZING_LOG_LICENSE_PERIOD_IN_SECONDS",
+        "cli": "log-license-period-in-seconds"
+    },
+    "monitoring_period_in_seconds": {
+        "default": 60 * 2,
+        "env": "SENZING_MONITORING_PERIOD_IN_SECONDS",
+        "cli": "monitoring-period-in-seconds",
     },
     "queue_maxsize": {
         "default": 10,
@@ -89,11 +101,6 @@ configuration_locator = {
         "default": "/opt/senzing/g2/resources",
         "env": "SENZING_RESOURCE_PATH",
         "cli": "resource-path"
-    },
-    "senzing_dir": {
-        "default": "/opt/senzing",
-        "env": "SENZING_DIR",
-        "cli": "senzing-dir"
     },
     "sleep_time_in_seconds": {
         "default": 0,
@@ -195,8 +202,20 @@ MESSAGE_DEBUG = 900
 
 message_dictionary = {
     "100": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}I",
+    "125": "G2 engine statistics: {0}",
+    "127": "Monitor: {0}",
     "129": "{0} is running.",
     "130": "{0} has exited.",
+    "160": "{0} LICENSE {0}",
+    "161": "          Version: {0} ({1})",
+    "162": "         Customer: {0}",
+    "163": "             Type: {0}",
+    "164": "  Expiration date: {0}",
+    "165": "  Expiration time: {0} days until expiration",
+    "166": "          Records: {0}",
+    "167": "         Contract: {0}",
+    "168": "  Expiration time: EXPIRED {0} days ago",
+    "180": "User-supplied Governor loaded from {0}.",
     "292": "Configuration change detected.  Old: {0} New: {1}",
     "293": "For information on warnings and errors, see https://github.com/Senzing/stream-loader#errors",
     "294": "Version: {0}  Updated: {1}",
@@ -221,6 +240,7 @@ message_dictionary = {
     "707": "G2Engine.process() G2ModuleNotInitialized: {0} XML: {1}",
     "708": "G2Engine.process() G2ModuleGenericException: {0} XML: {1}",
     "709": "G2Engine.process() err: {0}",
+    "721": "Running low on workers.  May need to restart",
     "730": "There are not enough safe characters to do the translation. Unsafe Characters: {0}; Safe Characters: {1}",
     "885": "License has expired.",
     "886": "G2Engine.addRecord() bad return code: {0}; JSON: {1}",
@@ -239,6 +259,7 @@ message_dictionary = {
     "900": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}D",
     "902": "Thread: {0} Added message to internal queue: {1}",
     "903": "Thread: {0} Processing message: {1}",
+    "904": "<<<< Thread: {0} Processed message: {1}",
     "998": "Debugging enabled.",
     "999": "{0}",
 }
@@ -469,8 +490,13 @@ def get_configuration(args):
     # Special case: Change integer strings to integers.
 
     integers = [
+        'expiration_warning_in_days',
+        'log_license_period_in_seconds',
+        'monitoring_period_in_seconds',
+        'queue_maxsize',
         'redo_sleep_time_in_seconds',
-        'sleep_time_in_seconds'
+        'sleep_time_in_seconds',
+        'threads_per_process'
     ]
     for integer in integers:
         integer_string = result.get(integer)
@@ -479,6 +505,9 @@ def get_configuration(args):
     # Special case:  Tailored database URL
 
     result['g2_database_url_specific'] = get_g2_database_url_specific(result.get("g2_database_url_generic"))
+
+    result['counter_processed_records'] = 0
+    result['counter_queued_records'] = 0
 
     return result
 
@@ -497,9 +526,7 @@ def validate_configuration(config):
     subcommand = config.get('subcommand')
 
     if subcommand in ['task1', 'task2']:
-
-        if not config.get('senzing_dir'):
-            user_error_messages.append(message_error(414))
+        pass
 
     # Log warning messages.
 
@@ -531,6 +558,109 @@ def redact_configuration(config):
         except:
             pass
     return result
+
+# -----------------------------------------------------------------------------
+# Class: MonitorThread
+# -----------------------------------------------------------------------------
+
+
+class MonitorThread(threading.Thread):
+
+    def __init__(self, config, g2_engine, workers):
+        threading.Thread.__init__(self)
+        self.config = config
+        self.g2_engine = g2_engine
+        self.workers = workers
+        # FIXME: self.last_daily = datetime.
+
+    def run(self):
+        '''Periodically monitor what is happening.'''
+
+        # Show that thread is starting in the log.
+
+        logging.info(message_info(129, threading.current_thread().name))
+
+        # Initialize variables.
+
+        last_processed_records = 0
+        last_queued_records = 0
+        last_time = time.time()
+        last_log_license = time.time()
+        log_license_period_in_seconds = self.config.get("log_license_period_in_seconds")
+
+        # Define monitoring report interval.
+
+        sleep_time_in_seconds = self.config.get('monitoring_period_in_seconds')
+
+        # Sleep-monitor loop.
+
+        active_workers = len(self.workers)
+        for worker in self.workers:
+            if not worker.is_alive():
+                active_workers -= 1
+
+        while active_workers > 0:
+
+            time.sleep(sleep_time_in_seconds)
+
+            # Calculate active Threads.
+
+            active_workers = len(self.workers)
+            for worker in self.workers:
+                if not worker.is_alive():
+                    active_workers -= 1
+
+            # Determine if we're running out of workers.
+
+            if (active_workers / float(len(self.workers))) < 0.5:
+                logging.warning(message_warning(721))
+
+            # Calculate times.
+
+            now = time.time()
+            uptime = now - self.config.get('start_time', now)
+            elapsed_time = now - last_time
+            elapsed_log_license = now - last_log_license
+
+            # Log license periodically to show days left in license.
+
+            if elapsed_log_license > log_license_period_in_seconds:
+                log_license(self.config)
+                last_log_license = now
+
+            # Calculate rates.
+
+            processed_records_total = self.config['counter_processed_records']
+            processed_records_interval = processed_records_total - last_processed_records
+
+            queued_records_total = self.config['counter_queued_records']
+            queued_records_interval = queued_records_total - last_queued_records
+
+            # Construct and log monitor statistics.
+
+            stats = {
+                "processed_records_interval": processed_records_interval,
+                "processed_records_total": processed_records_total,
+                "queued_records_interval": queued_records_interval,
+                "queued_records_total": queued_records_total,
+                "uptime": int(uptime),
+                "workers_total": len(self.workers),
+                "workers_active": active_workers,
+            }
+            logging.info(message_info(127, json.dumps(stats, sort_keys=True)))
+
+            # Log engine statistics with sorted JSON keys.
+
+            g2_engine_stats_response = bytearray()
+            self.g2_engine.stats(g2_engine_stats_response)
+            g2_engine_stats_dictionary = json.loads(g2_engine_stats_response.decode())
+            logging.info(message_info(125, json.dumps(g2_engine_stats_dictionary, sort_keys=True)))
+
+            # Store values for next iteration of loop.
+
+            last_processed_records = processed_records_total
+            last_queued_records = queued_records_total
+            last_time = now
 
 # -----------------------------------------------------------------------------
 # Class: ReadRedoQueueThread
@@ -595,6 +725,7 @@ class ReadRedoQueueThread(threading.Thread):
         for redo_record in self.redo_records():
             logging.debug(message_debug(902, threading.current_thread().name, redo_record))
             self.redo_queue.put(redo_record)
+            self.config['counter_queued_records'] += 1
 
         # Log message for thread exiting.
 
@@ -678,6 +809,14 @@ class ProcessRedoQueueThread(threading.Thread):
                     exit_error(709, err)
             if return_code:
                 exit_error(706, return_code)
+
+            # Record successful redo record processing.
+
+            self.config['counter_processed_records'] += 1
+
+            # FIXME: Remove after debugging.
+
+            logging.debug(message_debug(904, threading.current_thread().name, redo_record))
 
         # Log message for thread exiting.
 
@@ -796,6 +935,69 @@ def get_g2_engine(config, g2_engine_name="loader-G2-engine"):
         exit_error(898, g2_configuration_json, err)
     return result
 
+
+def get_g2_product(config, g2_product_name="loader-G2-product"):
+    '''Get the G2Product resource.'''
+    try:
+        g2_configuration_json = get_g2_configuration_json(config)
+        result = G2Product()
+        result.initV2(g2_product_name, g2_configuration_json, config.get('debug'))
+    except G2Exception.G2ModuleException as err:
+        exit_error(892, config.get('g2project_ini'), err)
+    return result
+
+# -----------------------------------------------------------------------------
+# Log information.
+# -----------------------------------------------------------------------------
+
+
+def log_license(config):
+    '''Capture the license and version info in the log.'''
+
+    g2_product = get_g2_product(config)
+    license = json.loads(g2_product.license())
+    version = json.loads(g2_product.version())
+
+    logging.info(message_info(160, '-' * 20))
+    if 'VERSION' in version:
+        logging.info(message_info(161, version['VERSION'], version['BUILD_DATE']))
+    if 'customer' in license:
+        logging.info(message_info(162, license['customer']))
+    if 'licenseType' in license:
+        logging.info(message_info(163, license['licenseType']))
+    if 'expireDate' in license:
+        logging.info(message_info(164, license['expireDate']))
+
+        # Calculate days remaining.
+
+        expire_date = datetime.datetime.strptime(license['expireDate'], '%Y-%m-%d')
+        today = datetime.datetime.today()
+        remaining_time = expire_date - today
+        if remaining_time.days > 0:
+            logging.info(message_info(165, remaining_time.days))
+            expiration_warning_in_days = config.get('expiration_warning_in_days')
+            if remaining_time.days < expiration_warning_in_days:
+                logging.warning(message_warning(203, remaining_time.days))
+        else:
+            logging.info(message_info(168, abs(remaining_time.days)))
+
+        # Issue warning if license is about to expire.
+
+    if 'recordLimit' in license:
+        logging.info(message_info(166, license['recordLimit']))
+    if 'contract' in license:
+        logging.info(message_info(167, license['contract']))
+    logging.info(message_info(299, '-' * 49))
+
+    # Garbage collect g2_product.
+
+    g2_product.destroy()
+
+    # If license has expired, exit with error.
+
+    if remaining_time.days < 0:
+        exit_error(885)
+
 # -----------------------------------------------------------------------------
 # do_* functions
 #   Common function signature: do_XXX(args)
@@ -830,6 +1032,10 @@ def do_redo(args):
 
     logging.info(entry_template(config))
 
+    # Write license information to log.
+
+    log_license(config)
+
     # Pull values from configuration.
 
     threads_per_process = config.get('threads_per_process')
@@ -861,9 +1067,21 @@ def do_redo(args):
         thread.name = "ProcessRedoQueue-0-thread-{0}".format(i)
         threads.append(thread)
 
+    # Add a monitoring thread.
+
+    adminThreads = []
+    thread = MonitorThread(config, g2_engine, threads)
+    thread.name = "Monitor-0-thread-0"
+    adminThreads.append(thread)
+
     # Start threads.
 
     for thread in threads:
+        thread.start()
+
+    # Start administrative threads for master process.
+
+    for thread in adminThreads:
         thread.start()
 
     # Collect inactive threads from master process.
@@ -983,3 +1201,5 @@ if __name__ == "__main__":
     # Tricky code for calling function based on string.
 
     globals()[subcommand_function_name](args)
+
+    logging.shutdown()
