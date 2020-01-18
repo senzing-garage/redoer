@@ -300,7 +300,7 @@ For other databases, these steps may be skipped.
       ${SENZING_OPT_IBM_DIR_PARAMETER} \
       ${SENZING_OPT_MICROSOFT_DIR_PARAMETER} \
       ${SENZING_RUNAS_USER_PARAMETER} \
-      senzing/stream-loader
+      senzing/redoer
     ```
 
 ## Develop
@@ -335,15 +335,15 @@ see [Environment Variables](https://github.com/Senzing/knowledge-base/blob/maste
 
     ```console
     sudo docker build \
-      --tag senzing/stream-loader \
-      https://github.com/senzing/stream-loader.git
+      --tag senzing/redoer \
+      https://github.com/senzing/redoer.git
     ```
 
 1. **Option #2:** Using `docker` command and local repository.
 
     ```console
     cd ${GIT_REPOSITORY_DIR}
-    sudo docker build --tag senzing/stream-loader .
+    sudo docker build --tag senzing/redoer .
     ```
 
 1. **Option #3:** Using `make` command.
@@ -356,11 +356,6 @@ see [Environment Variables](https://github.com/Senzing/knowledge-base/blob/maste
     Note: `sudo make docker-build-development-cache` can be used to create cached docker layers.
 
 ## Examples
-
-1. Examples of use:
-    1. [docker-compose-demo](https://github.com/Senzing/docker-compose-demo)
-    1. [kubernetes-demo](https://github.com/Senzing/kubernetes-demo)
-    1. [rancher-demo](https://github.com/Senzing/rancher-demo/tree/master/docs/db2-cluster-demo.md)
 
 ## Errors
 
