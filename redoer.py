@@ -29,7 +29,7 @@ except ImportError:
 __all__ = []
 __version__ = "1.0.0"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2020-01-17'
+__updated__ = '2020-01-18'
 
 SENZING_PRODUCT_ID = "5010"  # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 log_format = '%(asctime)s %(message)s'
@@ -653,11 +653,6 @@ class ProcessRedoQueueThread(threading.Thread):
     def run(self):
         '''Process Senzing redo records.'''
 
-        # FIXME:
-
-        print(self.is_g2_default_configuration_changed())
-        self.update_active_g2_configuration()
-
         # Show that thread is starting in the log.
 
         logging.info(message_info(129, threading.current_thread().name))
@@ -673,8 +668,8 @@ class ProcessRedoQueueThread(threading.Thread):
                 return_code = self.g2_engine.process(redo_record)
             except G2Exception.G2ModuleNotInitialized as err:
                 exit_error(707, err, redo_record_bytearray.decode())
-            except G2Exception.G2ModuleGenericException as err:
-                exit_error(708, err, redo_record_bytearray.decode())
+#           except G2Exception.G2ModuleGenericException as err:
+#               exit_error(708, err, redo_record_bytearray.decode())
             except Exception as err:
                 if self.is_g2_default_configuration_changed():
                     self.update_active_g2_configuration()
@@ -800,10 +795,6 @@ def get_g2_engine(config, g2_engine_name="loader-G2-engine"):
     except G2Exception.G2ModuleException as err:
         exit_error(898, g2_configuration_json, err)
     return result
-
-# -----------------------------------------------------------------------------
-# Utility functions
-# -----------------------------------------------------------------------------
 
 # -----------------------------------------------------------------------------
 # do_* functions
