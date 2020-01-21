@@ -1,12 +1,19 @@
 #! /usr/bin/env python3
 
 # -----------------------------------------------------------------------------
-# redoer.py
+# redoer.py - This script implements a daemon process that detects
+#   "redo records" and processes them. There are 3 types of threads running:
+#     1) A single thread that monitors and logs periodic status.
+#     2) A single thread that reads from Senzing's "redo list" and places on
+#        an internal queue.
+#     3) Multiple threads that read from the internal queue and process each
+#        Senzing redo record.
 # -----------------------------------------------------------------------------
 
+from glob import glob
+from urllib.parse import urlparse, urlunparse
 import argparse
 import datetime
-from glob import glob
 import json
 import linecache
 import logging
@@ -17,7 +24,6 @@ import string
 import sys
 import threading
 import time
-from urllib.parse import urlparse, urlunparse
 
 # Import Senzing libraries.
 try:
@@ -31,7 +37,7 @@ except ImportError:
 __all__ = []
 __version__ = "1.0.0"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2020-01-18'
+__updated__ = '2020-01-20'
 
 SENZING_PRODUCT_ID = "5010"  # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 log_format = '%(asctime)s %(message)s'
@@ -83,7 +89,7 @@ configuration_locator = {
         "cli": "log-license-period-in-seconds"
     },
     "monitoring_period_in_seconds": {
-        "default": 60 * 2,
+        "default": 60 * 10,
         "env": "SENZING_MONITORING_PERIOD_IN_SECONDS",
         "cli": "monitoring-period-in-seconds",
     },
@@ -259,7 +265,6 @@ message_dictionary = {
     "900": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}D",
     "902": "Thread: {0} Added message to internal queue: {1}",
     "903": "Thread: {0} Processing message: {1}",
-    "904": "<<<< Thread: {0} Processed message: {1}",
     "998": "Debugging enabled.",
     "999": "{0}",
 }
@@ -814,10 +819,6 @@ class ProcessRedoQueueThread(threading.Thread):
 
             self.config['counter_processed_records'] += 1
 
-            # FIXME: Remove after debugging.
-
-            logging.debug(message_debug(904, threading.current_thread().name, redo_record))
-
         # Log message for thread exiting.
 
         logging.info(message_info(130, threading.current_thread().name))
@@ -1201,5 +1202,3 @@ if __name__ == "__main__":
     # Tricky code for calling function based on string.
 
     globals()[subcommand_function_name](args)
-
-    logging.shutdown()
