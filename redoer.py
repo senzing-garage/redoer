@@ -444,6 +444,7 @@ message_dictionary = {
     "900": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}D",
     "902": "Thread: {0} Added message to internal queue: {1}",
     "903": "Thread: {0} Processing message: {1}",
+    "904": "{0} processed: {1}",
     "998": "Debugging enabled.",
     "999": "{0}",
 }
@@ -880,7 +881,6 @@ class MonitorThread(threading.Thread):
 class ProcessMixin():
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
         logging.info(message_info(132, "ProcessMixin"))
 
     def process_redo_record(self, redo_record=None):
@@ -909,21 +909,25 @@ class ProcessMixin():
 class ProcessWithInfoMixin():
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
         logging.info(message_info(132, "ProcessWithInfoMixin"))
+        self.g2_engine_flags = 0
 
     def process_redo_record(self, redo_record=None):
         '''
         Process a single Senzing redo record.
-        This method uses G2Engine.process()
-        The method can be sub-classed to call other G2Engine methods.
+        This method uses G2Engine.processRedoRecordWithInfo()
         '''
 
+        # Transform redo_record string to bytearray.
+
+        redo_record_bytearray = bytearray(redo_record.encode())
+
+        # Additional parameters for processRedoRecordWithInfo().
+
         info_bytearray = bytearray()
-        redo_record_bytearray = redo_record.encode()
 
         try:
-            self.g2_engine.processRedoRecordWithInfo(redo_record_bytearray, info_bytearray)
+            self.g2_engine.processRedoRecordWithInfo(redo_record_bytearray, info_bytearray, self.g2_engine_flags)
         except G2Exception.G2ModuleNotInitialized as err:
             self.add_to_failure_queue(redo_record)
             exit_error(707, err, info_bytearray.decode())
@@ -945,7 +949,7 @@ class ProcessWithInfoMixin():
 
         if filtered_info_json:
             self.add_to_info_queue(filtered_info_json)
-            logging.debug(message_debug(904, threading.current_thread().name, jsonline))
+            logging.debug(message_debug(904, threading.current_thread().name, filtered_info_json))
 
 # -----------------------------------------------------------------------------
 # Class: InputInternalMixin
@@ -955,7 +959,6 @@ class ProcessWithInfoMixin():
 class InputInternalMixin():
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
         logging.info(message_info(132, "InputInternalMixin"))
 
     def redo_records(self):
@@ -975,7 +978,6 @@ class InputInternalMixin():
 class InputKafkaMixin():
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
         logging.info(message_info(132, "InputKafkaMixin"))
 
     def redo_records(self):
@@ -989,7 +991,6 @@ class InputKafkaMixin():
 class InputRabbitmqMixin():
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
         logging.info(message_info(132, "InputRabbitmqMixin"))
 
     def redo_records(self):
@@ -1004,7 +1005,6 @@ class OutputInternalMixin():
     ''' This is a "null object". '''
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
         logging.info(message_info(132, "OutputInternalMixin"))
 
     def add_to_failure_queue(self, jsonline):
@@ -1021,7 +1021,6 @@ class OutputInternalMixin():
 class OutputKafkaMixin():
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
         logging.info(message_info(132, "OutputKafkaMixin"))
 
     def add_to_failure_queue(self, jsonline):
@@ -1040,7 +1039,6 @@ class OutputKafkaMixin():
 class OutputRabbitmqMixin():
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
         logging.info(message_info(132, "OutputRabbitmqMixin"))
 
     def add_to_failure_queue(self, jsonline):
@@ -1057,7 +1055,6 @@ class OutputRabbitmqMixin():
 class QueueInternalMixin():
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
         logging.info(message_info(132, "QueueInternalMixin"))
 
     def add_to_redo_queue(self, redo_record):
@@ -1071,7 +1068,6 @@ class QueueInternalMixin():
 class QueueKafkaMixin():
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
         logging.info(message_info(132, "QueueKafkaMixin"))
 
     def add_to_redo_queue(self, redo_record):
@@ -1085,7 +1081,6 @@ class QueueKafkaMixin():
 class QueueRabbitmqMixin():
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
         logging.info(message_info(132, "QueueRabbitmqMixin"))
 
     def add_to_redo_queue(self, redo_record):
@@ -1166,7 +1161,10 @@ class QueueRedoRecordsThread(threading.Thread):
 
 
 class QueueRedoRecordsInternalThread(QueueRedoRecordsThread, QueueInternalMixin):
-    pass
+
+    def __init__(self, *args, **kwargs):
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
 
 # -----------------------------------------------------------------------------
 # Class: ProcessRedoQueueThread
@@ -1181,7 +1179,11 @@ class ProcessRedoQueueThread(threading.Thread):
         self.g2_engine = g2_engine
         self.g2_configuration_manager = g2_configuration_manager
         self.governor = Governor(g2_engine=g2_engine)
+        self.info_filter = InfoFilter(g2_engine=g2_engine)
         self.redo_queue = redo_queue
+
+    def filter_info_message(self, line=None):
+        return self.info_filter.filter(line=line)
 
     def govern(self):
         return self.governor.govern()
@@ -1251,7 +1253,8 @@ class ProcessRedoQueueThread(threading.Thread):
 class ProcessRedoQueueInternalThread(ProcessRedoQueueThread, InputInternalMixin, ProcessMixin, OutputInternalMixin):
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
 
 # -----------------------------------------------------------------------------
 # Class: ProcessRedoQueueWithInfoInternalThread
@@ -1261,7 +1264,8 @@ class ProcessRedoQueueInternalThread(ProcessRedoQueueThread, InputInternalMixin,
 class ProcessRedoQueueWithInfoInternalThread(ProcessRedoQueueThread, InputInternalMixin, ProcessWithInfoMixin, OutputRabbitmqMixin):
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
 
 # -----------------------------------------------------------------------------
 # Class: ProcessRedoQueueWithInfoKafkaThread
@@ -1271,7 +1275,8 @@ class ProcessRedoQueueWithInfoInternalThread(ProcessRedoQueueThread, InputIntern
 class ProcessRedoQueueWithInfoKafkaThread(ProcessRedoQueueThread):
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
 
 # -----------------------------------------------------------------------------
 # Class: ProcessRedoQueueWithInfoRabbitmqThread
@@ -1281,7 +1286,8 @@ class ProcessRedoQueueWithInfoKafkaThread(ProcessRedoQueueThread):
 class ProcessRedoQueueWithInfoRabbitmqThread(ProcessRedoQueueThread):
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
 
 # -----------------------------------------------------------------------------
 # Utility functions
