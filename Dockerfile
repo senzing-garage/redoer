@@ -1,11 +1,11 @@
 ARG BASE_IMAGE=senzing/senzing-base:1.4.0
 FROM ${BASE_IMAGE}
 
-ENV REFRESHED_AT=2020-01-31
+ENV REFRESHED_AT=2020-02-19
 
 LABEL Name="senzing/redoer" \
       Maintainer="support@senzing.com" \
-      Version="1.1.0"
+      Version="1.1.1"
 
 HEALTHCHECK CMD ["/app/healthcheck.sh"]
 
@@ -15,11 +15,23 @@ USER root
 
 # Install packages via apt.
 
+RUN apt-get update \
+ && apt-get -y install \
+    librdkafka-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+# Install packages via PIP.
+
+RUN pip3 install \
+    configparser \
+    confluent-kafka \
+    psutil \
+    pika
+
 # Copy files from repository.
 
 COPY ./rootfs /
 COPY ./redoer.py /app/
-
 
 # Make non-root container.
 

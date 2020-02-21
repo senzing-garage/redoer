@@ -19,6 +19,7 @@ import linecache
 import logging
 import multiprocessing
 import os
+import pika
 import signal
 import string
 import sys
@@ -37,7 +38,7 @@ except ImportError:
 __all__ = []
 __version__ = "1.1.0"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2020-02-20'
+__updated__ = '2020-02-21'
 
 SENZING_PRODUCT_ID = "5010"  # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 log_format = '%(asctime)s %(message)s'
@@ -67,6 +68,11 @@ configuration_locator = {
         "default": False,
         "env": "SENZING_DEBUG",
         "cli": "debug"
+    },
+    "delay_in_seconds": {
+        "default": 0,
+        "env": "SENZING_DELAY_IN_SECONDS",
+        "cli": "delay-in-seconds"
     },
     "engine_configuration_json": {
         "default": None,
@@ -138,6 +144,11 @@ configuration_locator = {
         "env": "SENZING_RABBITMQ_FAILURE_USERNAME",
         "cli": "rabbitmq-failure-username",
     },
+    "rabbitmq_host": {
+        "default": "localhost:5672",
+        "env": "SENZING_RABBITMQ_HOST",
+        "cli": "rabbitmq-host",
+    },
     "rabbitmq_info_host": {
         "default": None,
         "env": "SENZING_RABBITMQ_INFO_HOST",
@@ -158,7 +169,22 @@ configuration_locator = {
         "env": "SENZING_RABBITMQ_INFO_USERNAME",
         "cli": "rabbitmq-info-username",
     },
-    "redo_sleep_time_in_seconds": {
+    "rabbitmq_password": {
+        "default": "bitnami",
+        "env": "SENZING_RABBITMQ_PASSWORD",
+        "cli": "rabbitmq-password",
+    },
+    "rabbitmq_queue": {
+        "default": "senzing-rabbitmq-queue",
+        "env": "SENZING_RABBITMQ_QUEUE",
+        "cli": "rabbitmq-queue",
+    },
+    "rabbitmq_username": {
+        "default": "user",
+        "env": "SENZING_RABBITMQ_USERNAME",
+        "cli": "rabbitmq-username",
+    },
+   "redo_sleep_time_in_seconds": {
         "default": 60,
         "env": "SENZING_REDO_SLEEP_TIME_IN_SECONDS",
         "cli": "sleep-time-in-seconds"
@@ -383,6 +409,7 @@ MESSAGE_DEBUG = 900
 
 message_dictionary = {
     "100": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}I",
+    "120": "Sleeping for requested delay of {0} seconds.",
     "121": "Adding JSON to failure queue: {0}",
     "125": "G2 engine statistics: {0}",
     "127": "Monitor: {0}",
@@ -410,6 +437,9 @@ message_dictionary = {
     "298": "Exit {0}",
     "299": "{0}",
     "300": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}W",
+    "410": "Unknown RabbitMQ error when connecting: {0}.",
+    "411": "Unknown RabbitMQ error when adding record to queue: {0} for line {1}.",
+    "412": "Could not connect to RabbitMQ host at {1}. The host name maybe wrong, it may not be ready, or your credentials are incorrect. See the RabbitMQ log for more details.",
     "499": "{0}",
     "500": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}E",
     "695": "Unknown database scheme '{0}' in database url '{1}'",
@@ -445,6 +475,7 @@ message_dictionary = {
     "902": "Thread: {0} Added message to internal queue: {1}",
     "903": "Thread: {0} Processing message: {1}",
     "904": "{0} processed: {1}",
+    "905": "{0} processing redo record: {1}",
     "998": "Debugging enabled.",
     "999": "{0}",
 }
@@ -675,6 +706,7 @@ def get_configuration(args):
     # Special case: Change integer strings to integers.
 
     integers = [
+        "delay_in_seconds",
         'expiration_warning_in_days',
         'log_license_period_in_seconds',
         'monitoring_period_in_seconds',
@@ -918,6 +950,8 @@ class ProcessWithInfoMixin():
         This method uses G2Engine.processRedoRecordWithInfo()
         '''
 
+        logging.debug(message_debug(905, threading.current_thread().name, redo_record))
+
         # Transform redo_record string to bytearray.
 
         redo_record_bytearray = bytearray(redo_record.encode())
@@ -929,14 +963,14 @@ class ProcessWithInfoMixin():
         try:
             self.g2_engine.processRedoRecordWithInfo(redo_record_bytearray, info_bytearray, self.g2_engine_flags)
         except G2Exception.G2ModuleNotInitialized as err:
-            self.add_to_failure_queue(redo_record)
+            self.send_to_failure_queue(redo_record)
             exit_error(707, err, info_bytearray.decode())
         except Exception as err:
             if self.is_g2_default_configuration_changed():
                 self.update_active_g2_configuration()
                 self.g2_engine.processRedoRecordWithInfo(redo_record_bytearray, info_bytearray)
             else:
-                self.add_to_failure_queue(redo_record)
+                self.send_to_failure_queue(redo_record)
                 exit_error(709, err)
 
         info_json = info_bytearray.decode()
@@ -948,7 +982,7 @@ class ProcessWithInfoMixin():
 #         # Put "info" on info queue.
 
         if filtered_info_json:
-            self.add_to_info_queue(filtered_info_json)
+            self.send_to_info_queue(filtered_info_json)
             logging.debug(message_debug(904, threading.current_thread().name, filtered_info_json))
 
 # -----------------------------------------------------------------------------
@@ -1007,10 +1041,10 @@ class OutputInternalMixin():
     def __init__(self, *args, **kwargs):
         logging.info(message_info(132, "OutputInternalMixin"))
 
-    def add_to_failure_queue(self, jsonline):
+    def send_to_failure_queue(self, jsonline):
         logging.info(message_info(121, jsonline))
 
-    def add_to_info_queue(self, jsonline):
+    def send_to_info_queue(self, jsonline):
         logging.info(message_info(128, jsonline))
 
 # -----------------------------------------------------------------------------
@@ -1023,11 +1057,11 @@ class OutputKafkaMixin():
     def __init__(self, *args, **kwargs):
         logging.info(message_info(132, "OutputKafkaMixin"))
 
-    def add_to_failure_queue(self, jsonline):
+    def send_to_failure_queue(self, jsonline):
         '''Default behavior. This may be implemented in the subclass.'''
         logging.info(message_info(121, jsonline))
 
-    def add_to_info_queue(self, jsonline):
+    def send_to_info_queue(self, jsonline):
         '''Default behavior. This may be implemented in the subclass.'''
         logging.info(message_info(128, jsonline))
 
@@ -1041,10 +1075,67 @@ class OutputRabbitmqMixin():
     def __init__(self, *args, **kwargs):
         logging.info(message_info(132, "OutputRabbitmqMixin"))
 
-    def add_to_failure_queue(self, jsonline):
+        # Pull values from configuration.
+
+        rabbitmq_failure_host = self.config.get("rabbitmq_failure_host")
+        self.rabbitmq_failure_queue = self.config.get("rabbitmq_failure_queue")
+        rabbitmq_failure_username = self.config.get("rabbitmq_failure_username")
+        rabbitmq_failure_password = self.config.get("rabbitmq_failure_password")
+        rabbitmq_info_host = self.config.get("rabbitmq_info_host")
+        self.rabbitmq_info_queue = self.config.get("rabbitmq_info_queue")
+        rabbitmq_info_username = self.config.get("rabbitmq_info_username")
+        rabbitmq_info_password = self.config.get("rabbitmq_info_password")
+
+        # Connect to the RabbitMQ host for failure_channel.
+
+        try:
+            credentials = pika.PlainCredentials(rabbitmq_failure_username, rabbitmq_failure_password)
+            connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_failure_host, credentials=credentials))
+            self.failure_channel = connection.channel()
+            self.failure_channel.queue_declare(queue=self.rabbitmq_failure_queue)
+        except (pika.exceptions.AMQPConnectionError) as err:
+            exit_error(412, err, rabbitmq_failure_host)
+        except BaseException as err:
+            exit_error(410, err)
+
+        # Connect to the RabbitMQ host for info_channel.
+
+        try:
+            credentials = pika.PlainCredentials(rabbitmq_info_username, rabbitmq_info_password)
+            connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_info_host, credentials=credentials))
+            self.info_channel = connection.channel()
+            self.info_channel.queue_declare(queue=self.rabbitmq_info_queue)
+        except (pika.exceptions.AMQPConnectionError) as err:
+            exit_error(412, err, rabbitmq_info_host)
+        except BaseException as err:
+            exit_error(410, err)
+
+    def send_to_failure_queue(self, jsonline):
+        try:
+            self.failure_channel.basic_publish(
+                exchange='',
+                routing_key=self.rabbitmq_failure_queue,
+                body=jsonline,
+                properties=pika.BasicProperties(
+                    delivery_mode=1  # Make message non-persistent
+                )
+            )
+        except BaseException as err:
+            logging.warn(message_warning(411, err, jsonline))
         logging.info(message_info(121, jsonline))
 
-    def add_to_info_queue(self, jsonline):
+    def send_to_info_queue(self, jsonline):
+        try:
+            self.info_channel.basic_publish(
+                exchange='',
+                routing_key=self.rabbitmq_info_queue,
+                body=jsonline,
+                properties=pika.BasicProperties(
+                    delivery_mode=1  # Make message non-persistent
+                )
+            )
+        except BaseException as err:
+            logging.warn(message_warning(411, err, jsonline))
         logging.info(message_info(128, jsonline))
 
 # -----------------------------------------------------------------------------
@@ -1057,7 +1148,7 @@ class QueueInternalMixin():
     def __init__(self, *args, **kwargs):
         logging.info(message_info(132, "QueueInternalMixin"))
 
-    def add_to_redo_queue(self, redo_record):
+    def send_to_redo_queue(self, redo_record):
         self.redo_queue.put(redo_record)
 
 # -----------------------------------------------------------------------------
@@ -1070,7 +1161,7 @@ class QueueKafkaMixin():
     def __init__(self, *args, **kwargs):
         logging.info(message_info(132, "QueueKafkaMixin"))
 
-    def add_to_redo_queue(self, redo_record):
+    def send_to_redo_queue(self, redo_record):
         logging.info(message_info(131, redo_record))
 
 # -----------------------------------------------------------------------------
@@ -1083,7 +1174,7 @@ class QueueRabbitmqMixin():
     def __init__(self, *args, **kwargs):
         logging.info(message_info(132, "QueueRabbitmqMixin"))
 
-    def add_to_redo_queue(self, redo_record):
+    def send_to_redo_queue(self, redo_record):
         logging.info(message_info(131, redo_record))
 
 # -----------------------------------------------------------------------------
@@ -1148,7 +1239,7 @@ class QueueRedoRecordsThread(threading.Thread):
 
         for redo_record in self.redo_records():
             logging.debug(message_debug(902, threading.current_thread().name, redo_record))
-            self.add_to_redo_queue(redo_record)
+            self.send_to_redo_queue(redo_record)
             self.config['counter_queued_records'] += 1
 
         # Log message for thread exiting.
@@ -1308,6 +1399,13 @@ def create_signal_handler_function(args):
         sys.exit(0)
 
     return result_function
+
+
+def delay(config):
+    delay_in_seconds = config.get('delay_in_seconds')
+    if delay_in_seconds > 0:
+        logging.info(message_info(120, delay_in_seconds))
+        time.sleep(delay_in_seconds)
 
 
 def entry_template(config):
@@ -1499,6 +1597,10 @@ def do_redo(args):
 
     logging.info(entry_template(config))
 
+    # If requested, delay start.
+
+    delay(config)
+
     # Write license information to log.
 
     log_license(config)
@@ -1586,9 +1688,28 @@ def do_redo_with_info_rabbitmq(args):
     config = get_configuration(args)
     validate_configuration(config)
 
+    # If configuration values not specified, use defaults.
+
+    options_to_defaults_map = {
+        "rabbitmq_failure_host": "rabbitmq_host",
+        "rabbitmq_failure_password": "rabbitmq_password",
+        "rabbitmq_failure_username": "rabbitmq_username",
+        "rabbitmq_info_host": "rabbitmq_host",
+        "rabbitmq_info_password": "rabbitmq_password",
+        "rabbitmq_info_username": "rabbitmq_username",
+    }
+
+    for key, value in options_to_defaults_map.items():
+        if not config.get(key):
+            config[key] = config.get(value)
+
     # Prolog.
 
     logging.info(entry_template(config))
+
+    # If requested, delay start.
+
+    delay(config)
 
     # Write license information to log.
 
