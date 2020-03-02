@@ -1007,14 +1007,14 @@ class MonitorThread(threading.Thread):
             last_time = now
 
 # -----------------------------------------------------------------------------
-# Class: ProcessMixin
+# Class: ExecuteMixin
 # -----------------------------------------------------------------------------
 
 
-class ProcessMixin():
+class ExecuteMixin():
 
     def __init__(self, *args, **kwargs):
-        logging.info(message_info(132, "ProcessMixin"))
+        logging.info(message_info(132, "ExecuteMixin"))
 
     def process_redo_record(self, redo_record=None):
         '''
@@ -1035,14 +1035,14 @@ class ProcessMixin():
                 exit_error(709, err)
 
 # -----------------------------------------------------------------------------
-# Class: ProcessWithInfoMixin
+# Class: ExecuteWithInfoMixin
 # -----------------------------------------------------------------------------
 
 
-class ProcessWithInfoMixin():
+class ExecuteWithInfoMixin():
 
     def __init__(self, *args, **kwargs):
-        logging.info(message_info(132, "ProcessWithInfoMixin"))
+        logging.info(message_info(132, "ExecuteWithInfoMixin"))
         self.g2_engine_flags = 0
 
     def process_redo_record(self, redo_record=None):
@@ -1087,11 +1087,11 @@ class ProcessWithInfoMixin():
             logging.debug(message_debug(904, threading.current_thread().name, filtered_info_json))
 
 # -----------------------------------------------------------------------------
-# Class: ProcessWriteToRabbitmqMixin
+# Class: ExecuteWriteToRabbitmqMixin
 # -----------------------------------------------------------------------------
 
 
-class ProcessWriteToRabbitmqMixin():
+class ExecuteWriteToRabbitmqMixin():
 
     def __init__(self, *args, **kwargs):
         logging.info(message_info(132, "ProcessWriteToQueueMixin"))
@@ -1391,86 +1391,6 @@ class QueueRabbitmqMixin():
         logging.info(message_info(131, redo_record))
 
 # -----------------------------------------------------------------------------
-# Class: QueueRedoRecordsThread
-# -----------------------------------------------------------------------------
-
-
-class QueueRedoRecordsThread(threading.Thread):
-
-    def __init__(self, config=None, g2_engine=None, redo_queue=None):
-        threading.Thread.__init__(self)
-        self.config = config
-        self.g2_engine = g2_engine
-        self.redo_queue = redo_queue
-
-    def redo_records(self):
-        '''A generator for producing Senzing redo records.'''
-
-        # Pull values from configuration.
-
-        redo_sleep_time_in_seconds = self.config.get('redo_sleep_time_in_seconds')
-
-        # Initialize variables.
-
-        redo_record_bytearray = bytearray()
-        return_code = 0
-
-        # Read forever.
-
-        while True:
-
-            # Read a Senzing redo record.
-
-            try:
-                return_code = self.g2_engine.getRedoRecord(redo_record_bytearray)
-            except G2Exception.G2ModuleNotInitialized as err:
-                exit_error(702, err, redo_record_bytearray.decode())
-            except Exception as err:
-                exit_error(703, err)
-            if return_code:
-                exit_error(701, return_code)
-
-            # If redo record was not received, sleep and try again.
-
-            redo_record = redo_record_bytearray.decode()
-            if not redo_record:
-                time.sleep(redo_sleep_time_in_seconds)
-                continue
-
-            # Return generator value.
-
-            yield redo_record
-
-    def run(self):
-        '''Get redo records from Senzing.  Put redo records in internal queue.'''
-
-        # Show that thread is starting in the log.
-
-        logging.info(message_info(129, threading.current_thread().name))
-
-        # Transfer messages from Senzing to internal queue.
-
-        for redo_record in self.redo_records():
-            logging.debug(message_debug(902, threading.current_thread().name, redo_record))
-            self.send_to_redo_queue(redo_record)
-            self.config['counter_queued_records'] += 1
-
-        # Log message for thread exiting.
-
-        logging.info(message_info(130, threading.current_thread().name))
-
-# -----------------------------------------------------------------------------
-# Class: QueueRedoRecordsThread
-# -----------------------------------------------------------------------------
-
-
-class QueueRedoRecordsInternalThread(QueueRedoRecordsThread, QueueInternalMixin):
-
-    def __init__(self, *args, **kwargs):
-        for base in type(self).__bases__:
-            base.__init__(self, *args, **kwargs)
-
-# -----------------------------------------------------------------------------
 # Class: ProcessRedoQueueThread
 # -----------------------------------------------------------------------------
 
@@ -1550,6 +1470,119 @@ class ProcessRedoQueueThread(threading.Thread):
         logging.info(message_info(130, threading.current_thread().name))
 
 # -----------------------------------------------------------------------------
+# Class: ProcessRedoQueueInternalThread
+# -----------------------------------------------------------------------------
+
+
+class ProcessRedoQueueInternalThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteMixin, OutputInternalMixin):
+
+    def __init__(self, *args, **kwargs):
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
+
+# -----------------------------------------------------------------------------
+# Class: ProcessRedoQueueInternalWithInfoThread
+# -----------------------------------------------------------------------------
+
+
+class ProcessRedoQueueInternalWithInfoThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWithInfoMixin, OutputRabbitmqMixin):
+
+    def __init__(self, *args, **kwargs):
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
+
+# -----------------------------------------------------------------------------
+# Class: ProcessRedoQueueKafkaWithInfoThread
+# -----------------------------------------------------------------------------
+
+
+class ProcessRedoQueueKafkaWithInfoThread(ProcessRedoQueueThread):
+
+    def __init__(self, *args, **kwargs):
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
+
+# -----------------------------------------------------------------------------
+# Class: ProcessRedoQueueRabbitmqThread
+# -----------------------------------------------------------------------------
+
+
+class ProcessRedoQueueRabbitmqThread(ProcessRedoQueueThread, InputRabbitmqMixin, ExecuteMixin, OutputInternalMixin):
+
+    def __init__(self, *args, **kwargs):
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
+
+# -----------------------------------------------------------------------------
+# Class: QueueRedoRecordsThread
+# -----------------------------------------------------------------------------
+
+
+class QueueRedoRecordsThread(threading.Thread):
+
+    def __init__(self, config=None, g2_engine=None, redo_queue=None):
+        threading.Thread.__init__(self)
+        self.config = config
+        self.g2_engine = g2_engine
+        self.redo_queue = redo_queue
+
+    def redo_records(self):
+        '''A generator for producing Senzing redo records.'''
+
+        # Pull values from configuration.
+
+        redo_sleep_time_in_seconds = self.config.get('redo_sleep_time_in_seconds')
+
+        # Initialize variables.
+
+        redo_record_bytearray = bytearray()
+        return_code = 0
+
+        # Read forever.
+
+        while True:
+
+            # Read a Senzing redo record.
+
+            try:
+                return_code = self.g2_engine.getRedoRecord(redo_record_bytearray)
+            except G2Exception.G2ModuleNotInitialized as err:
+                exit_error(702, err, redo_record_bytearray.decode())
+            except Exception as err:
+                exit_error(703, err)
+            if return_code:
+                exit_error(701, return_code)
+
+            # If redo record was not received, sleep and try again.
+
+            redo_record = redo_record_bytearray.decode()
+            if not redo_record:
+                time.sleep(redo_sleep_time_in_seconds)
+                continue
+
+            # Return generator value.
+
+            yield redo_record
+
+    def run(self):
+        '''Get redo records from Senzing.  Put redo records in internal queue.'''
+
+        # Show that thread is starting in the log.
+
+        logging.info(message_info(129, threading.current_thread().name))
+
+        # Transfer messages from Senzing to internal queue.
+
+        for redo_record in self.redo_records():
+            logging.debug(message_debug(902, threading.current_thread().name, redo_record))
+            self.send_to_redo_queue(redo_record)
+            self.config['counter_queued_records'] += 1
+
+        # Log message for thread exiting.
+
+        logging.info(message_info(130, threading.current_thread().name))
+
+# -----------------------------------------------------------------------------
 # Class: WriteToQueueThread
 # -----------------------------------------------------------------------------
 
@@ -1592,55 +1625,22 @@ class WriteToQueueThread(threading.Thread):
         logging.info(message_info(130, threading.current_thread().name))
 
 # -----------------------------------------------------------------------------
-# Class: ProcessRedoQueueWithInfoThread
+# Class: QueueRedoRecordsThread
 # -----------------------------------------------------------------------------
 
 
-class ProcessRedoQueueInternalThread(ProcessRedoQueueThread, InputInternalMixin, ProcessMixin, OutputInternalMixin):
+class QueueRedoRecordsInternalThread(QueueRedoRecordsThread, QueueInternalMixin):
 
     def __init__(self, *args, **kwargs):
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
 # -----------------------------------------------------------------------------
-# Class: ProcessRedoQueueWithInfoInternalThread
+# Class: QueueRedoRecordsRabbitmqThread
 # -----------------------------------------------------------------------------
 
 
-class ProcessRedoQueueWithInfoInternalThread(ProcessRedoQueueThread, InputInternalMixin, ProcessWithInfoMixin, OutputRabbitmqMixin):
-
-    def __init__(self, *args, **kwargs):
-        for base in type(self).__bases__:
-            base.__init__(self, *args, **kwargs)
-
-# -----------------------------------------------------------------------------
-# Class: ProcessRedoQueueWithInfoKafkaThread
-# -----------------------------------------------------------------------------
-
-
-class ProcessRedoQueueWithInfoKafkaThread(ProcessRedoQueueThread):
-
-    def __init__(self, *args, **kwargs):
-        for base in type(self).__bases__:
-            base.__init__(self, *args, **kwargs)
-
-# -----------------------------------------------------------------------------
-# Class: ProcessRedoQueueWithInfoRabbitmqThread
-# -----------------------------------------------------------------------------
-
-
-class ProcessRedoQueueWithInfoRabbitmqThread(ProcessRedoQueueThread, InputRabbitmqMixin, ProcessMixin, OutputInternalMixin):
-
-    def __init__(self, *args, **kwargs):
-        for base in type(self).__bases__:
-            base.__init__(self, *args, **kwargs)
-
-# -----------------------------------------------------------------------------
-# Class: ProcessRedoQueueWithInfoInternalThread
-# -----------------------------------------------------------------------------
-
-
-class ProcessRedoQueueWriteRabbitmqThread(WriteToQueueThread, InputInternalMixin, ProcessWriteToRabbitmqMixin):
+class QueueRedoRecordsRabbitmqThread(WriteToQueueThread, InputInternalMixin, ExecuteWriteToRabbitmqMixin):
 
     def __init__(self, *args, **kwargs):
         for base in type(self).__bases__:
@@ -1899,7 +1899,7 @@ def do_read_from_rabbitmq(args):
     # Add a number of threads for processing Redo records from internal queue.
 
     for i in range(0, threads_per_process):
-        thread = ProcessRedoQueueWithInfoRabbitmqThread(
+        thread = ProcessRedoQueueRabbitmqThread(
             config=config,
             g2_engine=g2_engine,
             g2_configuration_manager=g2_configuration_manager,
@@ -2103,7 +2103,7 @@ def do_redo_with_info_rabbitmq(args):
     # Add a number of threads for processing Redo records from internal queue.
 
     for i in range(0, threads_per_process):
-        thread = ProcessRedoQueueWithInfoInternalThread(
+        thread = ProcessRedoQueueInternalWithInfoThread(
             config=config,
             g2_engine=g2_engine,
             g2_configuration_manager=g2_configuration_manager,
@@ -2242,13 +2242,13 @@ def do_write_to_rabbitmq(args):
     # Add a number of threads for processing Redo records from internal queue.
 
     for i in range(0, threads_per_process):
-        thread = ProcessRedoQueueWriteRabbitmqThread(
+        thread = QueueRedoRecordsRabbitmqThread(
             config=config,
             g2_engine=g2_engine,
             g2_configuration_manager=g2_configuration_manager,
             redo_queue=redo_queue
         )
-        thread.name = "ProcessRedoQueueWriteRabbitmq-0-thread-{0}".format(i)
+        thread.name = "ProcessRedoQueueRabbitmqWriter-0-thread-{0}".format(i)
         threads.append(thread)
 
     # Add a monitoring thread.
