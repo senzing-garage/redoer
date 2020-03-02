@@ -174,6 +174,11 @@ configuration_locator = {
         "env": "SENZING_RABBITMQ_PASSWORD",
         "cli": "rabbitmq-password",
     },
+    "rabbitmq_prefetch_count": {
+        "default": 50,
+        "env": "SENZING_RABBITMQ_PREFETCH_COUNT",
+        "cli": "rabbitmq_prefetch_count",
+    },
     "rabbitmq_queue": {
         "default": "senzing-rabbitmq-queue",
         "env": "SENZING_RABBITMQ_QUEUE",
@@ -258,6 +263,46 @@ def get_parser():
                     "dest": "engine_configuration_json",
                     "metavar": "SENZING_ENGINE_CONFIGURATION_JSON",
                     "help": "Advanced Senzing engine configuration. Default: none"
+                },
+                "--threads-per-process": {
+                    "dest": "threads_per_process",
+                    "metavar": "SENZING_THREADS_PER_PROCESS",
+                    "help": "Number of threads per process. Default: 4"
+                }
+            },
+        },
+        'read-from-rabbitmq': {
+            "help": 'Read Senzing Redo from RabbitMQ and process.',
+            "arguments": {
+                "--engine-configuration-json": {
+                    "dest": "engine_configuration_json",
+                    "metavar": "SENZING_ENGINE_CONFIGURATION_JSON",
+                    "help": "Advanced Senzing engine configuration. Default: none"
+                },
+                "--monitoring-period-in-seconds": {
+                    "dest": "monitoring_period_in_seconds",
+                    "metavar": "SENZING_MONITORING_PERIOD_IN_SECONDS",
+                    "help": "Period, in seconds, between monitoring reports. Default: 300"
+                },
+                "--rabbitmq-host": {
+                    "dest": "rabbitmq_host",
+                    "metavar": "SENZING_RABBITMQ_HOST",
+                    "help": "RabbitMQ host. Default: localhost:5672"
+                },
+                "--rabbitmq-username": {
+                    "dest": "rabbitmq_username",
+                    "metavar": "SENZING_RABBITMQ_USERNAME",
+                    "help": "RabbitMQ username. Default: user"
+                },
+                "--rabbitmq-password": {
+                    "dest": "rabbitmq_password",
+                    "metavar": "SENZING_RABBITMQ_PASSWORD",
+                    "help": "RabbitMQ password. Default: bitnami"
+                },
+                "--rabbitmq-redo-queue": {
+                    "dest": "rabbitmq_redo_queue",
+                    "metavar": "SENZING_RABBITMQ_REDO_QUEUE",
+                    "help": "RabbitMQ queue. Default: senzing-rabbitmq-redo-queue"
                 },
                 "--threads-per-process": {
                     "dest": "threads_per_process",
@@ -1142,8 +1187,61 @@ class InputRabbitmqMixin():
     def __init__(self, *args, **kwargs):
         logging.info(message_info(132, "InputRabbitmqMixin"))
 
+        # Pull values from configuration.
+
+        rabbitmq_host = self.config.get("rabbitmq_redo_host")
+        rabbitmq_queue = self.config.get("rabbitmq_redo_queue")
+        rabbitmq_username = self.config.get("rabbitmq_redo_username")
+        rabbitmq_password = self.config.get("rabbitmq_redo_password")
+        rabbitmq_prefetch_count = self.config.get("rabbitmq_prefetch_count")
+
+        # A very small internal queue to transfer data from RabbitMQ callback() to generator.
+
+        self.redo_queue = multiprocessing.Queue(2)
+
+        # Connect to the RabbitMQ host for failure_channel.
+
+        try:
+            credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
+            connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host, credentials=credentials))
+            self.channel = connection.channel()
+            self.channel.queue_declare(queue=rabbitmq_queue)
+            self.channel.basic_qos(prefetch_count=rabbitmq_prefetch_count)
+            self.channel.basic_consume(on_message_callback=self.callback, queue=rabbitmq_queue)
+        except pika.exceptions.AMQPConnectionError as err:
+            exit_error(562, err, rabbitmq_host)
+        except BaseException as err:
+            exit_error(561, err)
+
+    def callback(self, channel, method, header, body):
+        '''
+        Called by Pika whenever a message is received.
+        Read from RabbitMQ and put into a very small internal queue.
+        '''
+        message = body.decode()
+        logging.debug(message_debug(904, threading.current_thread().name, message))
+        self.redo_queue.put(message)
+        self.config['counter_processed_records'] += 1
+        channel.basic_ack(delivery_tag=method.delivery_tag)
+
     def redo_records(self):
-        pass
+        '''
+        Generator that produces Senzing redo records.
+        This method reads from a very small "internal queue"
+        populated by the RabbitMQ callback() method.
+        '''
+
+        # Start consuming.
+
+        try:
+            self.channel.start_consuming()
+        except pika.exceptions.ChannelClosed:
+            logging.info(message_info(130, threading.current_thread().name))
+
+        # Return value from very small internal queue.
+
+        while True:
+            yield self.redo_queue.get()
 
 # -----------------------------------------------------------------------------
 # Class: OutputInternalMixin
@@ -1531,7 +1629,7 @@ class ProcessRedoQueueWithInfoKafkaThread(ProcessRedoQueueThread):
 # -----------------------------------------------------------------------------
 
 
-class ProcessRedoQueueWithInfoRabbitmqThread(ProcessRedoQueueThread):
+class ProcessRedoQueueWithInfoRabbitmqThread(ProcessRedoQueueThread, InputRabbitmqMixin, ProcessMixin, OutputInternalMixin):
 
     def __init__(self, *args, **kwargs):
         for base in type(self).__bases__:
@@ -1542,7 +1640,6 @@ class ProcessRedoQueueWithInfoRabbitmqThread(ProcessRedoQueueThread):
 # -----------------------------------------------------------------------------
 
 
-# FIXME: MJD
 class ProcessRedoQueueWriteRabbitmqThread(WriteToQueueThread, InputInternalMixin, ProcessWriteToRabbitmqMixin):
 
     def __init__(self, *args, **kwargs):
@@ -1748,6 +1845,97 @@ def do_docker_acceptance_test(args):
     # Prolog.
 
     logging.info(entry_template(config))
+
+    # Epilog.
+
+    logging.info(exit_template(config))
+
+
+def do_read_from_rabbitmq(args):
+    ''' Read Redo records from RabbitMQ and process. '''
+
+    # Get context from CLI, environment variables, and ini files.
+
+    config = get_configuration(args)
+    validate_configuration(config)
+
+    # If configuration values not specified, use defaults.
+
+    options_to_defaults_map = {
+        "rabbitmq_redo_host": "rabbitmq_host",
+        "rabbitmq_redo_password": "rabbitmq_password",
+        "rabbitmq_redo_username": "rabbitmq_username",
+    }
+
+    for key, value in options_to_defaults_map.items():
+        if not config.get(key):
+            config[key] = config.get(value)
+
+    # Prolog.
+
+    logging.info(entry_template(config))
+
+    # If requested, delay start.
+
+    delay(config)
+
+    # Write license information to log.
+
+    log_license(config)
+
+    # Pull values from configuration.
+
+    threads_per_process = config.get('threads_per_process')
+
+    # Get the Senzing G2 resources.
+
+    g2_engine = get_g2_engine(config)
+    g2_configuration_manager = get_g2_configuration_manager(config)
+
+    # Create threads for master process.
+
+    threads = []
+
+    # Add a number of threads for processing Redo records from internal queue.
+
+    for i in range(0, threads_per_process):
+        thread = ProcessRedoQueueWithInfoRabbitmqThread(
+            config=config,
+            g2_engine=g2_engine,
+            g2_configuration_manager=g2_configuration_manager,
+        )
+        thread.name = "ProcessRedoQueueWithInfoRabbitmq-0-thread-{0}".format(i)
+        threads.append(thread)
+
+    # Add a monitoring thread.
+
+    adminThreads = []
+    thread = MonitorThread(
+        config=config,
+        g2_engine=g2_engine,
+        workers=threads
+    )
+    thread.name = "Monitor-0-thread-0"
+    adminThreads.append(thread)
+
+    # Start threads.
+
+    for thread in threads:
+        thread.start()
+
+    # Start administrative threads for master process.
+
+    for thread in adminThreads:
+        thread.start()
+
+    # Collect inactive threads from master process.
+
+    for thread in threads:
+        thread.join()
+
+    # Cleanup.
+
+    g2_engine.destroy()
 
     # Epilog.
 
@@ -2028,14 +2216,14 @@ def do_write_to_rabbitmq(args):
     threads_per_process = config.get('threads_per_process')
     queue_maxsize = config.get('queue_maxsize')
 
-    # Create internal Queue.
-
-    redo_queue = multiprocessing.Queue(queue_maxsize)
-
     # Get the Senzing G2 resources.
 
     g2_engine = get_g2_engine(config)
     g2_configuration_manager = get_g2_configuration_manager(config)
+
+    # Create internal Queue.
+
+    redo_queue = multiprocessing.Queue(queue_maxsize)
 
     # Create threads for master process.
 
@@ -2088,10 +2276,6 @@ def do_write_to_rabbitmq(args):
 
     for thread in threads:
         thread.join()
-
-    # Cleanup.
-
-    g2_engine.destroy()
 
     # Epilog.
 
