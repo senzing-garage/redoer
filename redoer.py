@@ -38,7 +38,7 @@ except ImportError:
 __all__ = []
 __version__ = "1.1.0"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2020-03-02'
+__updated__ = '2020-03-03'
 
 SENZING_PRODUCT_ID = "5010"  # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 log_format = '%(asctime)s %(message)s'
@@ -257,7 +257,7 @@ def get_parser():
 
     subcommands = {
         'redo': {
-            "help": 'Example task #1.',
+            "help": 'Read Senzing redo records from Senzing SDK and send to G2Engine.process()',
             "arguments": {
                 "--engine-configuration-json": {
                     "dest": "engine_configuration_json",
@@ -272,7 +272,7 @@ def get_parser():
             },
         },
         'read-from-rabbitmq': {
-            "help": 'Read Senzing Redo from RabbitMQ and process.',
+            "help": 'Read Senzing redo records from RabbitMQ and send to G2Engine.process()',
             "arguments": {
                 "--engine-configuration-json": {
                     "dest": "engine_configuration_json",
@@ -311,8 +311,48 @@ def get_parser():
                 }
             },
         },
-        'redo-with-info-kafka': {
-            "help": 'Example task #1.',
+        'read-from-rabbitmq-withinfo': {
+            "help": 'Read Senzing redo records from RabbitMQ and send to G2Engine.processRedoRecordWithInfo()',
+            "arguments": {
+                "--engine-configuration-json": {
+                    "dest": "engine_configuration_json",
+                    "metavar": "SENZING_ENGINE_CONFIGURATION_JSON",
+                    "help": "Advanced Senzing engine configuration. Default: none"
+                },
+                "--monitoring-period-in-seconds": {
+                    "dest": "monitoring_period_in_seconds",
+                    "metavar": "SENZING_MONITORING_PERIOD_IN_SECONDS",
+                    "help": "Period, in seconds, between monitoring reports. Default: 300"
+                },
+                "--rabbitmq-host": {
+                    "dest": "rabbitmq_host",
+                    "metavar": "SENZING_RABBITMQ_HOST",
+                    "help": "RabbitMQ host. Default: localhost:5672"
+                },
+                "--rabbitmq-username": {
+                    "dest": "rabbitmq_username",
+                    "metavar": "SENZING_RABBITMQ_USERNAME",
+                    "help": "RabbitMQ username. Default: user"
+                },
+                "--rabbitmq-password": {
+                    "dest": "rabbitmq_password",
+                    "metavar": "SENZING_RABBITMQ_PASSWORD",
+                    "help": "RabbitMQ password. Default: bitnami"
+                },
+                "--rabbitmq-redo-queue": {
+                    "dest": "rabbitmq_redo_queue",
+                    "metavar": "SENZING_RABBITMQ_REDO_QUEUE",
+                    "help": "RabbitMQ queue. Default: senzing-rabbitmq-redo-queue"
+                },
+                "--threads-per-process": {
+                    "dest": "threads_per_process",
+                    "metavar": "SENZING_THREADS_PER_PROCESS",
+                    "help": "Number of threads per process. Default: 4"
+                }
+            },
+        },
+        'redo-withinfo-kafka': {
+            "help": 'Read Senzing redo records from Senzing SDK, send to G2Engine.processRedoRecordWithInfo(), results sent to Kafka.',
             "arguments": {
                 "--engine-configuration-json": {
                     "dest": "engine_configuration_json",
@@ -351,8 +391,8 @@ def get_parser():
                 }
             },
         },
-        'redo-with-info-rabbitmq': {
-            "help": 'Example task #1.',
+        'redo-withinfo-rabbitmq': {
+            "help": 'Read Senzing redo records from Senzing SDK, send to G2Engine.processRedoRecordWithInfo(), results sent to RabbitMQ.',
             "arguments": {
                 "--engine-configuration-json": {
                     "dest": "engine_configuration_json",
@@ -427,7 +467,7 @@ def get_parser():
             },
         },
         'write-to-rabbitmq': {
-            "help": 'Read from Senzing Redo, write to RabbitMQ.',
+            "help": 'Read Senzing redo records from Senzing SDK and send to RabbitMQ.',
             "arguments": {
                 "--engine-configuration-json": {
                     "dest": "engine_configuration_json",
@@ -1830,6 +1870,119 @@ def log_license(config):
         exit_error(885)
 
 # -----------------------------------------------------------------------------
+# redo templates
+# -----------------------------------------------------------------------------
+
+
+def redo_template(
+    args=None,
+    options_to_defaults_map={},
+    read_thread=None,
+    process_thread=None,
+    monitor_thread=None):
+
+    # Get context from CLI, environment variables, and ini files.
+
+    config = get_configuration(args)
+    validate_configuration(config)
+
+    # If configuration values not specified, use defaults.
+
+    for key, value in options_to_defaults_map.items():
+        if not config.get(key):
+            config[key] = config.get(value)
+
+    # Prolog.
+
+    logging.info(entry_template(config))
+
+    # If requested, delay start.
+
+    delay(config)
+
+    # Write license information to log.
+
+    log_license(config)
+
+    # Pull values from configuration.
+
+    threads_per_process = config.get('threads_per_process')
+    queue_maxsize = config.get('queue_maxsize')
+
+    # Create internal Queue.
+
+    redo_queue = multiprocessing.Queue(queue_maxsize)
+
+    # Get the Senzing G2 resources.
+
+    g2_engine = get_g2_engine(config)
+    g2_configuration_manager = get_g2_configuration_manager(config)
+
+    # Create threads for master process.
+
+    threads = []
+
+    # Add a single thread for reading from Senzing Redo queue and placing on internal queue.
+
+    if read_thread:
+        thread = read_thread(
+            config=config,
+            g2_engine=g2_engine,
+            redo_queue=redo_queue
+        )
+        thread.name = "Process-0-{0}-0".format(thread.__class__.__name__)
+        threads.append(thread)
+
+    # Add a number of threads for processing Redo records from internal queue.
+
+    if process_thread:
+        for i in range(0, threads_per_process):
+            thread = process_thread(
+                config=config,
+                g2_engine=g2_engine,
+                g2_configuration_manager=g2_configuration_manager,
+                redo_queue=redo_queue
+            )
+            thread.name = "Process-0-{0}-{1}".format(thread.__class__.__name__, i)
+            threads.append(thread)
+
+    # Add a monitoring thread.
+
+    adminThreads = []
+
+    if monitor_thread:
+        thread = monitor_thread(
+            config=config,
+            g2_engine=g2_engine,
+            workers=threads
+        )
+        thread.name = "Process-0-{0}-0".format(thread.__class__.__name__)
+        adminThreads.append(thread)
+
+    # Start threads.
+
+    for thread in threads:
+        thread.start()
+
+    # Start administrative threads for master process.
+
+    for thread in adminThreads:
+        thread.start()
+
+    # Collect inactive threads from master process.
+
+    for thread in threads:
+        thread.join()
+
+    # Cleanup.
+
+    g2_engine.destroy()
+
+    # Epilog.
+
+    logging.info(exit_template(config))
+
+# -----------------------------------------------------------------------------
 # do_* functions
 #   Common function signature: do_XXX(args)
 # -----------------------------------------------------------------------------
@@ -1852,14 +2005,10 @@ def do_docker_acceptance_test(args):
 
 
 def do_read_from_rabbitmq(args):
-    ''' Read Redo records from RabbitMQ and process. '''
-
-    # Get context from CLI, environment variables, and ini files.
-
-    config = get_configuration(args)
-    validate_configuration(config)
-
-    # If configuration values not specified, use defaults.
+    '''
+    Read Senzing redo records from RabbitMQ and send to G2Engine.process().
+    "withinfo" is not returned.
+    '''
 
     options_to_defaults_map = {
         "rabbitmq_redo_host": "rabbitmq_host",
@@ -1867,185 +2016,55 @@ def do_read_from_rabbitmq(args):
         "rabbitmq_redo_username": "rabbitmq_username",
     }
 
-    for key, value in options_to_defaults_map.items():
-        if not config.get(key):
-            config[key] = config.get(value)
-
-    # Prolog.
-
-    logging.info(entry_template(config))
-
-    # If requested, delay start.
-
-    delay(config)
-
-    # Write license information to log.
-
-    log_license(config)
-
-    # Pull values from configuration.
-
-    threads_per_process = config.get('threads_per_process')
-
-    # Get the Senzing G2 resources.
-
-    g2_engine = get_g2_engine(config)
-    g2_configuration_manager = get_g2_configuration_manager(config)
-
-    # Create threads for master process.
-
-    threads = []
-
-    # Add a number of threads for processing Redo records from internal queue.
-
-    for i in range(0, threads_per_process):
-        thread = ProcessRedoQueueRabbitmqThread(
-            config=config,
-            g2_engine=g2_engine,
-            g2_configuration_manager=g2_configuration_manager,
-        )
-        thread.name = "ProcessRedoQueueWithInfoRabbitmq-0-thread-{0}".format(i)
-        threads.append(thread)
-
-    # Add a monitoring thread.
-
-    adminThreads = []
-    thread = MonitorThread(
-        config=config,
-        g2_engine=g2_engine,
-        workers=threads
+    redo_template(
+        args=args,
+        options_to_defaults_map=options_to_defaults_map,
+        process_thread=ProcessRedoQueueRabbitmqThread,
+        monitor_thread=MonitorThread
     )
-    thread.name = "Monitor-0-thread-0"
-    adminThreads.append(thread)
 
-    # Start threads.
 
-    for thread in threads:
-        thread.start()
+def do_read_from_rabbitmq_withinfo(args):
+    '''
+    Read Senzing redo records from RabbitMQ and send to G2Engine.processRedoRecordWithInfo().
+    "withinfo" returned is sent to RabbitMQ.
+    '''
 
-    # Start administrative threads for master process.
+    options_to_defaults_map = {
+        "rabbitmq_redo_host": "rabbitmq_host",
+        "rabbitmq_redo_password": "rabbitmq_password",
+        "rabbitmq_redo_username": "rabbitmq_username",
+    }
 
-    for thread in adminThreads:
-        thread.start()
-
-    # Collect inactive threads from master process.
-
-    for thread in threads:
-        thread.join()
-
-    # Cleanup.
-
-    g2_engine.destroy()
-
-    # Epilog.
-
-    logging.info(exit_template(config))
+    redo_template(
+        args=args,
+        options_to_defaults_map=options_to_defaults_map,
+        process_thread=ProcessRedoQueueRabbitmqThread,
+        monitor_thread=MonitorThread
+    )
 
 
 def do_redo(args):
-    ''' Process Senzing's Redo queue. '''
+    '''
+    Read Senzing redo records from Senzing SDK and send to G2Engine.process().
+    No external queues are used.
+    "withinfo" is not returned.
+    '''
 
-    # Get context from CLI, environment variables, and ini files.
-
-    config = get_configuration(args)
-    validate_configuration(config)
-
-    # Prolog.
-
-    logging.info(entry_template(config))
-
-    # If requested, delay start.
-
-    delay(config)
-
-    # Write license information to log.
-
-    log_license(config)
-
-    # Pull values from configuration.
-
-    threads_per_process = config.get('threads_per_process')
-    queue_maxsize = config.get('queue_maxsize')
-
-    # Create internal Queue.
-
-    redo_queue = multiprocessing.Queue(queue_maxsize)
-
-    # Get the Senzing G2 resources.
-
-    g2_engine = get_g2_engine(config)
-    g2_configuration_manager = get_g2_configuration_manager(config)
-
-    # Create threads for master process.
-
-    threads = []
-
-    # Add a single thread for reading from Senzing Redo queue and placing on internal queue.
-
-    thread = QueueRedoRecordsInternalThread(
-        config=config,
-        g2_engine=g2_engine,
-        redo_queue=redo_queue
+    redo_template(
+        args=args,
+        read_thread=QueueRedoRecordsInternalThread,
+        process_thread=ProcessRedoQueueInternalThread,
+        monitor_thread=MonitorThread
     )
-    thread.name = "QueueRedoRecordsInternal-0-thread-1"
-    threads.append(thread)
-
-    # Add a number of threads for processing Redo records from internal queue.
-
-    for i in range(0, threads_per_process):
-        thread = ProcessRedoQueueInternalThread(
-            config=config,
-            g2_engine=g2_engine,
-            g2_configuration_manager=g2_configuration_manager,
-            redo_queue=redo_queue
-        )
-        thread.name = "ProcessRedoQueueInternal-0-thread-{0}".format(i)
-        threads.append(thread)
-
-    # Add a monitoring thread.
-
-    adminThreads = []
-    thread = MonitorThread(
-        config=config,
-        g2_engine=g2_engine,
-        workers=threads
-    )
-    thread.name = "Monitor-0-thread-0"
-    adminThreads.append(thread)
-
-    # Start threads.
-
-    for thread in threads:
-        thread.start()
-
-    # Start administrative threads for master process.
-
-    for thread in adminThreads:
-        thread.start()
-
-    # Collect inactive threads from master process.
-
-    for thread in threads:
-        thread.join()
-
-    # Cleanup.
-
-    g2_engine.destroy()
-
-    # Epilog.
-
-    logging.info(exit_template(config))
 
 
-def do_redo_with_info_rabbitmq(args):
-    ''' Process Senzing's Redo queue. '''
-
-    # Get context from CLI, environment variables, and ini files.
-
-    config = get_configuration(args)
-    validate_configuration(config)
-
-    # If configuration values not specified, use defaults.
+def do_redo_withinfo_rabbitmq(args):
+    '''
+    Read Senzing redo records from Senzing SDK and send to G2Engine.processRedoRecordWithInfo().
+    No external queues are used.
+    "withinfo" returned is sent to RabbitMQ.
+    '''
 
     options_to_defaults_map = {
         "rabbitmq_failure_host": "rabbitmq_host",
@@ -2056,95 +2075,13 @@ def do_redo_with_info_rabbitmq(args):
         "rabbitmq_info_username": "rabbitmq_username",
     }
 
-    for key, value in options_to_defaults_map.items():
-        if not config.get(key):
-            config[key] = config.get(value)
-
-    # Prolog.
-
-    logging.info(entry_template(config))
-
-    # If requested, delay start.
-
-    delay(config)
-
-    # Write license information to log.
-
-    log_license(config)
-
-    # Pull values from configuration.
-
-    threads_per_process = config.get('threads_per_process')
-    queue_maxsize = config.get('queue_maxsize')
-
-    # Create internal Queue.
-
-    redo_queue = multiprocessing.Queue(queue_maxsize)
-
-    # Get the Senzing G2 resources.
-
-    g2_engine = get_g2_engine(config)
-    g2_configuration_manager = get_g2_configuration_manager(config)
-
-    # Create threads for master process.
-
-    threads = []
-
-    # Add a single thread for reading from Senzing Redo queue and placing on internal queue.
-
-    thread = QueueRedoRecordsInternalThread(
-        config=config,
-        g2_engine=g2_engine,
-        redo_queue=redo_queue
+    redo_template(
+        args=args,
+        options_to_defaults_map=options_to_defaults_map,
+        read_thread=QueueRedoRecordsInternalThread,
+        process_thread=ProcessRedoQueueInternalWithInfoThread,
+        monitor_thread=MonitorThread
     )
-    thread.name = "QueueRedoRecordsInternal-0-thread-1"
-    threads.append(thread)
-
-    # Add a number of threads for processing Redo records from internal queue.
-
-    for i in range(0, threads_per_process):
-        thread = ProcessRedoQueueInternalWithInfoThread(
-            config=config,
-            g2_engine=g2_engine,
-            g2_configuration_manager=g2_configuration_manager,
-            redo_queue=redo_queue
-        )
-        thread.name = "ProcessRedoQueueWithInfoInternal-0-thread-{0}".format(i)
-        threads.append(thread)
-
-    # Add a monitoring thread.
-
-    adminThreads = []
-    thread = MonitorThread(
-        config=config,
-        g2_engine=g2_engine,
-        workers=threads
-    )
-    thread.name = "Monitor-0-thread-0"
-    adminThreads.append(thread)
-
-    # Start threads.
-
-    for thread in threads:
-        thread.start()
-
-    # Start administrative threads for master process.
-
-    for thread in adminThreads:
-        thread.start()
-
-    # Collect inactive threads from master process.
-
-    for thread in threads:
-        thread.join()
-
-    # Cleanup.
-
-    g2_engine.destroy()
-
-    # Epilog.
-
-    logging.info(exit_template(config))
 
 
 def do_sleep(args):
@@ -2180,14 +2117,10 @@ def do_sleep(args):
 
 
 def do_write_to_rabbitmq(args):
-    ''' Read from Senzing's Redo queue, write to RabbitMQ '''
-
-    # Get context from CLI, environment variables, and ini files.
-
-    config = get_configuration(args)
-    validate_configuration(config)
-
-    # If configuration values not specified, use defaults.
+    '''
+    Read Senzing redo records from Senzing SDK and send to RabbitMQ.
+    No processing is done.
+    '''
 
     options_to_defaults_map = {
         "rabbitmq_redo_host": "rabbitmq_host",
@@ -2195,91 +2128,13 @@ def do_write_to_rabbitmq(args):
         "rabbitmq_redo_username": "rabbitmq_username",
     }
 
-    for key, value in options_to_defaults_map.items():
-        if not config.get(key):
-            config[key] = config.get(value)
-
-    # Prolog.
-
-    logging.info(entry_template(config))
-
-    # If requested, delay start.
-
-    delay(config)
-
-    # Write license information to log.
-
-    log_license(config)
-
-    # Pull values from configuration.
-
-    threads_per_process = config.get('threads_per_process')
-    queue_maxsize = config.get('queue_maxsize')
-
-    # Get the Senzing G2 resources.
-
-    g2_engine = get_g2_engine(config)
-    g2_configuration_manager = get_g2_configuration_manager(config)
-
-    # Create internal Queue.
-
-    redo_queue = multiprocessing.Queue(queue_maxsize)
-
-    # Create threads for master process.
-
-    threads = []
-
-    # Add a single thread for reading from Senzing Redo queue and placing on internal queue.
-
-    thread = QueueRedoRecordsInternalThread(
-        config=config,
-        g2_engine=g2_engine,
-        redo_queue=redo_queue
+    redo_template(
+        args=args,
+        options_to_defaults_map=options_to_defaults_map,
+        read_thread=QueueRedoRecordsInternalThread,
+        process_thread=QueueRedoRecordsRabbitmqThread,
+        monitor_thread=MonitorThread
     )
-    thread.name = "QueueRedoRecordsInternal-0-thread-1"
-    threads.append(thread)
-
-    # Add a number of threads for processing Redo records from internal queue.
-
-    for i in range(0, threads_per_process):
-        thread = QueueRedoRecordsRabbitmqThread(
-            config=config,
-            g2_engine=g2_engine,
-            g2_configuration_manager=g2_configuration_manager,
-            redo_queue=redo_queue
-        )
-        thread.name = "ProcessRedoQueueRabbitmqWriter-0-thread-{0}".format(i)
-        threads.append(thread)
-
-    # Add a monitoring thread.
-
-    adminThreads = []
-    thread = MonitorThread(
-        config=config,
-        g2_engine=g2_engine,
-        workers=threads
-    )
-    thread.name = "Monitor-0-thread-0"
-    adminThreads.append(thread)
-
-    # Start threads.
-
-    for thread in threads:
-        thread.start()
-
-    # Start administrative threads for master process.
-
-    for thread in adminThreads:
-        thread.start()
-
-    # Collect inactive threads from master process.
-
-    for thread in threads:
-        thread.join()
-
-    # Epilog.
-
-    logging.info(exit_template(config))
 
 
 def do_version(args):
