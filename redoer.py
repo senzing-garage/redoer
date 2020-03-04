@@ -38,7 +38,7 @@ except ImportError:
 __all__ = []
 __version__ = "1.1.0"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2020-03-03'
+__updated__ = '2020-03-04'
 
 SENZING_PRODUCT_ID = "5010"  # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 log_format = '%(asctime)s %(message)s'
@@ -282,7 +282,7 @@ def get_parser():
                 "--monitoring-period-in-seconds": {
                     "dest": "monitoring_period_in_seconds",
                     "metavar": "SENZING_MONITORING_PERIOD_IN_SECONDS",
-                    "help": "Period, in seconds, between monitoring reports. Default: 300"
+                    "help": "Period, in seconds, between monitoring reports. Default: 600"
                 },
                 "--rabbitmq-host": {
                     "dest": "rabbitmq_host",
@@ -322,7 +322,7 @@ def get_parser():
                 "--monitoring-period-in-seconds": {
                     "dest": "monitoring_period_in_seconds",
                     "metavar": "SENZING_MONITORING_PERIOD_IN_SECONDS",
-                    "help": "Period, in seconds, between monitoring reports. Default: 300"
+                    "help": "Period, in seconds, between monitoring reports. Default: 600"
                 },
                 "--rabbitmq-host": {
                     "dest": "rabbitmq_host",
@@ -402,7 +402,7 @@ def get_parser():
                 "--monitoring-period-in-seconds": {
                     "dest": "monitoring_period_in_seconds",
                     "metavar": "SENZING_MONITORING_PERIOD_IN_SECONDS",
-                    "help": "Period, in seconds, between monitoring reports. Default: 300"
+                    "help": "Period, in seconds, between monitoring reports. Default: 600"
                 },
                 "--rabbitmq-host": {
                     "dest": "rabbitmq_host",
@@ -477,7 +477,7 @@ def get_parser():
                 "--monitoring-period-in-seconds": {
                     "dest": "monitoring_period_in_seconds",
                     "metavar": "SENZING_MONITORING_PERIOD_IN_SECONDS",
-                    "help": "Period, in seconds, between monitoring reports. Default: 300"
+                    "help": "Period, in seconds, between monitoring reports. Default: 600"
                 },
                 "--rabbitmq-host": {
                     "dest": "rabbitmq_host",
@@ -616,6 +616,7 @@ message_dictionary = {
     "903": "Thread: {0} Processing message: {1}",
     "904": "{0} processed: {1}",
     "905": "{0} processing redo record: {1}",
+    "910": "Adding JSON to info queue: {0}",
     "998": "Debugging enabled.",
     "999": "{0}",
 }
@@ -1183,7 +1184,7 @@ class ExecuteWriteToRabbitmqMixin():
             )
         except BaseException as err:
             logging.warn(message_warning(411, err, redo_record))
-        logging.info(message_info(128, redo_record))
+        logging.debug(message_debug(910, redo_record))
 
 # -----------------------------------------------------------------------------
 # Class: InputInternalMixin
@@ -1283,6 +1284,14 @@ class InputRabbitmqMixin():
         while True:
             yield self.redo_queue.get()
 
+
+# =============================================================================
+# Mixins: Output*
+#    Methods:
+#        send_to_failure_queue(message)
+#        send_to_info_queue(message):
+# =============================================================================
+
 # -----------------------------------------------------------------------------
 # Class: OutputInternalMixin
 # -----------------------------------------------------------------------------
@@ -1294,11 +1303,11 @@ class OutputInternalMixin():
     def __init__(self, *args, **kwargs):
         logging.info(message_info(132, "OutputInternalMixin"))
 
-    def send_to_failure_queue(self, jsonline):
-        logging.info(message_info(121, jsonline))
+    def send_to_failure_queue(self, message):
+        logging.info(message_info(121, message))
 
-    def send_to_info_queue(self, jsonline):
-        logging.info(message_info(128, jsonline))
+    def send_to_info_queue(self, message):
+        logging.info(message_info(128, message))
 
 # -----------------------------------------------------------------------------
 # Class: OutputKafkaMixin
@@ -1310,13 +1319,11 @@ class OutputKafkaMixin():
     def __init__(self, *args, **kwargs):
         logging.info(message_info(132, "OutputKafkaMixin"))
 
-    def send_to_failure_queue(self, jsonline):
-        '''Default behavior. This may be implemented in the subclass.'''
-        logging.info(message_info(121, jsonline))
+    def send_to_failure_queue(self, message):
+        pass
 
-    def send_to_info_queue(self, jsonline):
-        '''Default behavior. This may be implemented in the subclass.'''
-        logging.info(message_info(128, jsonline))
+    def send_to_info_queue(self, message):
+        pass
 
 # -----------------------------------------------------------------------------
 # Class: OutputRabbitmqMixin
@@ -1363,33 +1370,33 @@ class OutputRabbitmqMixin():
         except BaseException as err:
             exit_error(410, err)
 
-    def send_to_failure_queue(self, jsonline):
+    def send_to_failure_queue(self, message):
         try:
             self.failure_channel.basic_publish(
                 exchange='',
                 routing_key=self.rabbitmq_failure_queue,
-                body=jsonline,
+                body=message,
                 properties=pika.BasicProperties(
                     delivery_mode=1  # Make message non-persistent
                 )
             )
         except BaseException as err:
-            logging.warn(message_warning(411, err, jsonline))
-        logging.info(message_info(121, jsonline))
+            logging.warn(message_warning(411, err, message))
+        logging.info(message_info(121, message))
 
-    def send_to_info_queue(self, jsonline):
+    def send_to_info_queue(self, message):
         try:
             self.info_channel.basic_publish(
                 exchange='',
                 routing_key=self.rabbitmq_info_queue,
-                body=jsonline,
+                body=message,
                 properties=pika.BasicProperties(
                     delivery_mode=1  # Make message non-persistent
                 )
             )
         except BaseException as err:
-            logging.warn(message_warning(411, err, jsonline))
-        logging.info(message_info(128, jsonline))
+            logging.warn(message_warning(411, err, message))
+        logging.debug(message_debug(910, message))
 
 # -----------------------------------------------------------------------------
 # Class: QueueInternalMixin
@@ -1403,32 +1410,6 @@ class QueueInternalMixin():
 
     def send_to_redo_queue(self, redo_record):
         self.redo_queue.put(redo_record)
-
-# -----------------------------------------------------------------------------
-# Class: QueueKafkaMixin
-# -----------------------------------------------------------------------------
-
-
-class QueueKafkaMixin():
-
-    def __init__(self, *args, **kwargs):
-        logging.info(message_info(132, "QueueKafkaMixin"))
-
-    def send_to_redo_queue(self, redo_record):
-        logging.info(message_info(131, redo_record))
-
-# -----------------------------------------------------------------------------
-# Class: QueueRabbitmqMixin
-# -----------------------------------------------------------------------------
-
-
-class QueueRabbitmqMixin():
-
-    def __init__(self, *args, **kwargs):
-        logging.info(message_info(132, "QueueRabbitmqMixin"))
-
-    def send_to_redo_queue(self, redo_record):
-        logging.info(message_info(131, redo_record))
 
 # -----------------------------------------------------------------------------
 # Class: ProcessRedoQueueThread
@@ -1874,7 +1855,7 @@ def log_license(config):
 # -----------------------------------------------------------------------------
 
 
-def redo_template(
+def redo_processor(
     args=None,
     options_to_defaults_map={},
     read_thread=None,
@@ -2016,7 +1997,7 @@ def do_read_from_rabbitmq(args):
         "rabbitmq_redo_username": "rabbitmq_username",
     }
 
-    redo_template(
+    redo_processor(
         args=args,
         options_to_defaults_map=options_to_defaults_map,
         process_thread=ProcessRedoQueueRabbitmqThread,
@@ -2036,7 +2017,7 @@ def do_read_from_rabbitmq_withinfo(args):
         "rabbitmq_redo_username": "rabbitmq_username",
     }
 
-    redo_template(
+    redo_processor(
         args=args,
         options_to_defaults_map=options_to_defaults_map,
         process_thread=ProcessRedoQueueRabbitmqThread,
@@ -2051,7 +2032,7 @@ def do_redo(args):
     "withinfo" is not returned.
     '''
 
-    redo_template(
+    redo_processor(
         args=args,
         read_thread=QueueRedoRecordsInternalThread,
         process_thread=ProcessRedoQueueInternalThread,
@@ -2075,7 +2056,7 @@ def do_redo_withinfo_rabbitmq(args):
         "rabbitmq_info_username": "rabbitmq_username",
     }
 
-    redo_template(
+    redo_processor(
         args=args,
         options_to_defaults_map=options_to_defaults_map,
         read_thread=QueueRedoRecordsInternalThread,
@@ -2128,7 +2109,7 @@ def do_write_to_rabbitmq(args):
         "rabbitmq_redo_username": "rabbitmq_username",
     }
 
-    redo_template(
+    redo_processor(
         args=args,
         options_to_defaults_map=options_to_defaults_map,
         read_thread=QueueRedoRecordsInternalThread,
