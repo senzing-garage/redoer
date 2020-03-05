@@ -179,11 +179,6 @@ configuration_locator = {
         "env": "SENZING_RABBITMQ_PREFETCH_COUNT",
         "cli": "rabbitmq_prefetch_count",
     },
-    "rabbitmq_queue": {
-        "default": "senzing-rabbitmq-queue",
-        "env": "SENZING_RABBITMQ_QUEUE",
-        "cli": "rabbitmq-queue",
-    },
     "rabbitmq_redo_host": {
         "default": None,
         "env": "SENZING_RABBITMQ_REDO_HOST",
@@ -1066,12 +1061,14 @@ class ExecuteMixin():
 
         try:
             self.g2_engine.process(redo_record)
+            self.config['counter_processed_records'] += 1
         except G2Exception.G2ModuleNotInitialized as err:
             exit_error(707, err, redo_record_bytearray.decode())
         except Exception as err:
             if self.is_g2_default_configuration_changed():
                 self.update_active_g2_configuration()
                 return_code = self.g2_engine.process(redo_record)
+                self.config['counter_processed_records'] += 1
             else:
                 exit_error(709, err)
 
@@ -1104,6 +1101,7 @@ class ExecuteWithInfoMixin():
 
         try:
             self.g2_engine.processRedoRecordWithInfo(redo_record_bytearray, info_bytearray, self.g2_engine_flags)
+            self.config['counter_processed_records'] += 1
         except G2Exception.G2ModuleNotInitialized as err:
             self.send_to_failure_queue(redo_record)
             exit_error(707, err, info_bytearray.decode())
@@ -1111,6 +1109,7 @@ class ExecuteWithInfoMixin():
             if self.is_g2_default_configuration_changed():
                 self.update_active_g2_configuration()
                 self.g2_engine.processRedoRecordWithInfo(redo_record_bytearray, info_bytearray)
+                self.config['counter_processed_records'] += 1
             else:
                 self.send_to_failure_queue(redo_record)
                 exit_error(709, err)
@@ -1182,6 +1181,7 @@ class ExecuteWriteToRabbitmqMixin():
                     delivery_mode=1  # Make message non-persistent
                 )
             )
+            self.config['counter_queued_records'] += 1
         except BaseException as err:
             logging.warn(message_warning(411, err, redo_record))
         logging.debug(message_debug(910, redo_record))
@@ -1262,7 +1262,7 @@ class InputRabbitmqMixin():
         message = body.decode()
         logging.debug(message_debug(904, threading.current_thread().name, message))
         self.redo_queue.put(message)
-        self.config['counter_processed_records'] += 1
+        self.config['counter_queued_records'] += 1
         channel.basic_ack(delivery_tag=method.delivery_tag)
 
     def redo_records(self):
@@ -1283,7 +1283,6 @@ class InputRabbitmqMixin():
 
         while True:
             yield self.redo_queue.get()
-
 
 # =============================================================================
 # Mixins: Output*
@@ -1484,7 +1483,6 @@ class ProcessRedoQueueThread(threading.Thread):
 
             logging.debug(message_debug(903, threading.current_thread().name, redo_record))
             self.process_redo_record(redo_record)
-            self.config['counter_processed_records'] += 1
 
         # Log message for thread exiting.
 
@@ -1639,7 +1637,6 @@ class WriteToQueueThread(threading.Thread):
 
             logging.debug(message_debug(903, threading.current_thread().name, redo_record))
             self.process_redo_record(redo_record)
-            self.config['counter_processed_records'] += 1
 
         # Log message for thread exiting.
 
