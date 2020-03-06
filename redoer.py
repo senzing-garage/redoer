@@ -10,10 +10,9 @@
 #        Senzing redo record.
 # -----------------------------------------------------------------------------
 
-from glob import glob
-from urllib.parse import urlparse, urlunparse
 import argparse
 import datetime
+from glob import glob
 import json
 import linecache
 import logging
@@ -25,8 +24,12 @@ import string
 import sys
 import threading
 import time
+from urllib.parse import urlparse, urlunparse
+
+import confluent_kafka
 
 # Import Senzing libraries.
+
 try:
     from G2ConfigMgr import G2ConfigMgr
     from G2Engine import G2Engine
@@ -38,9 +41,11 @@ except ImportError:
 __all__ = []
 __version__ = "1.1.0"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2020-03-04'
+__updated__ = '2020-03-06'
 
-SENZING_PRODUCT_ID = "5010"  # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
+# See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
+SENZING_PRODUCT_ID = "5010"
+
 log_format = '%(asctime)s %(message)s'
 
 # Working with bytes.
@@ -51,9 +56,9 @@ GIGABYTES = 1024 * MEGABYTES
 
 # Lists from https://www.ietf.org/rfc/rfc1738.txt
 
-safe_character_list = ['$', '-', '_', '.', '+', '!', '*', '(', ')', ',', '"' ] + list(string.ascii_letters)
-unsafe_character_list = [ '"', '<', '>', '#', '%', '{', '}', '|', '\\', '^', '~', '[', ']', '`']
-reserved_character_list = [ ';', ',', '/', '?', ':', '@', '=', '&']
+safe_character_list = ['$', '-', '_', '.', '+', '!', '*', '(', ')', ',', '"'] + list(string.ascii_letters)
+unsafe_character_list = ['"', '<', '>', '#', '%', '{', '}', '|', '\\', '^', '~', '[', ']', '`']
+reserved_character_list = [';', ',', '/', '?', ':', '@', '=', '&']
 
 # The "configuration_locator" describes where configuration variables are in:
 # 1) Command line options, 2) Environment variables, 3) Configuration files, 4) Default values
@@ -89,6 +94,11 @@ configuration_locator = {
         "env": "SENZING_DATABASE_URL",
         "cli": "database-url"
     },
+    "kafka_bootstrap_server": {
+        "default": "localhost:9092",
+        "env": "SENZING_KAFKA_BOOTSTRAP_SERVER",
+        "cli": "kafka-bootstrap-server",
+    },
     "kafka_failure_bootstrap_server": {
         "default": None,
         "env": "SENZING_KAFKA_FAILURE_BOOTSTRAP_SERVER",
@@ -108,6 +118,16 @@ configuration_locator = {
         "default": "senzing-kafka-info-topic",
         "env": "SENZING_KAFKA_INFO_TOPIC",
         "cli": "kafka--info-topic"
+    },
+    "kafka_redo_group": {
+        "default": "senzing-kafka-redo-group",
+        "env": "SENZING_KAFKA_REDO_GROUP",
+        "cli": "kafka-redo-group"
+    },
+    "kafka_redo_topic": {
+        "default": "senzing-kafka-redo-topic",
+        "env": "SENZING_KAFKA_REDO_TOPIC",
+        "cli": "kafka-redo-topic"
     },
     "log_license_period_in_seconds": {
         "default": 60 * 60 * 24,
@@ -204,10 +224,10 @@ configuration_locator = {
         "env": "SENZING_RABBITMQ_USERNAME",
         "cli": "rabbitmq-username",
     },
-   "redo_sleep_time_in_seconds": {
+    "redo_sleep_time_in_seconds": {
         "default": 60,
         "env": "SENZING_REDO_SLEEP_TIME_IN_SECONDS",
-        "cli": "sleep-time-in-seconds"
+        "cli": "sleep-time-in-seconds",
     },
     "resource_path": {
         "default": "/opt/senzing/g2/resources",
@@ -258,6 +278,51 @@ def get_parser():
                     "dest": "engine_configuration_json",
                     "metavar": "SENZING_ENGINE_CONFIGURATION_JSON",
                     "help": "Advanced Senzing engine configuration. Default: none"
+                },
+                "--threads-per-process": {
+                    "dest": "threads_per_process",
+                    "metavar": "SENZING_THREADS_PER_PROCESS",
+                    "help": "Number of threads per process. Default: 4"
+                }
+            },
+        },
+        'read-from-kafka': {
+            "help": 'Read Senzing redo records from RabbitMQ and send to G2Engine.process()',
+            "arguments": {
+                "--engine-configuration-json": {
+                    "dest": "engine_configuration_json",
+                    "metavar": "SENZING_ENGINE_CONFIGURATION_JSON",
+                    "help": "Advanced Senzing engine configuration. Default: none"
+                },
+                "--monitoring-period-in-seconds": {
+                    "dest": "monitoring_period_in_seconds",
+                    "metavar": "SENZING_MONITORING_PERIOD_IN_SECONDS",
+                    "help": "Period, in seconds, between monitoring reports. Default: 600"
+                },
+                "--kafka-bootstrap-server": {
+                    "dest": "kafka_bootstrap_server",
+                    "metavar": "SENZING_KAFKA_BOOTSTRAP_SERVER",
+                    "help": "Kafka bootstrap server. Default: localhost:9092"
+                },
+                "--kafka-group": {
+                    "dest": "kafka_group",
+                    "metavar": "SENZING_KAFKA_GROUP",
+                    "help": "Kafka group. Default: senzing-kafka-group"
+                },
+                "--kafka-redo-bootstrap-server": {
+                    "dest": "kafka_redo_bootstrap_server",
+                    "metavar": "SENZING_KAFKA_REDO_BOOTSTRAP_SERVER",
+                    "help": "Kafka bootstrap server. Default: localhost:9092"
+                },
+                "--kafka-redo-group": {
+                    "dest": "kafka_redo_group",
+                    "metavar": "SENZING_KAFKA_REDO_GROUP",
+                    "help": "Kafka group. Default: senzing-kafka-redo-group"
+                },
+                "--kafka-redo-topic": {
+                    "dest": "kafka_redo_topic",
+                    "metavar": "SENZING_KAFKA_REDO_TOPIC",
+                    "help": "Kafka topic. Default: senzing-kafka-redo-topic"
                 },
                 "--threads-per-process": {
                     "dest": "threads_per_process",
@@ -459,6 +524,36 @@ def get_parser():
                     "metavar": "SENZING_THREADS_PER_PROCESS",
                     "help": "Number of threads per process. Default: 4"
                 }
+            },
+        },
+        'write-to-kafka': {
+            "help": 'Read Senzing redo records from Senzing SDK and send to Kafka.',
+            "arguments": {
+                "--engine-configuration-json": {
+                    "dest": "engine_configuration_json",
+                    "metavar": "SENZING_ENGINE_CONFIGURATION_JSON",
+                    "help": "Advanced Senzing engine configuration. Default: none"
+                },
+                "--monitoring-period-in-seconds": {
+                    "dest": "monitoring_period_in_seconds",
+                    "metavar": "SENZING_MONITORING_PERIOD_IN_SECONDS",
+                    "help": "Period, in seconds, between monitoring reports. Default: 600"
+                },
+                "--kafka-bootstrap-server": {
+                    "dest": "kafka_bootstrap_server",
+                    "metavar": "SENZING_KAFKA_BOOTSTRAP_SERVER",
+                    "help": "Kafka bootstrap server. Default: localhost:9092"
+                },
+                "--kafka-redo-bootstrap-server": {
+                    "dest": "kafka_redo_bootstrap_server",
+                    "metavar": "SENZING_KAFKA_REDO_BOOTSTRAP_SERVER",
+                    "help": "Kafka bootstrap server. Default: localhost:9092"
+                },
+                "--kafka-redo-topic": {
+                    "dest": "kafka_redo_topic",
+                    "metavar": "SENZING_REDO_KAFKA_TOPIC",
+                    "help": "Kafka topic. Default: senzing-redo-kafka-topic"
+                },
             },
         },
         'write-to-rabbitmq': {
@@ -1134,7 +1229,7 @@ class ExecuteWithInfoMixin():
 class ExecuteWriteToRabbitmqMixin():
 
     def __init__(self, *args, **kwargs):
-        logging.info(message_info(132, "ProcessWriteToQueueMixin"))
+        logging.info(message_info(132, "ExecuteWriteToRabbitmqMixin"))
 
         # Pull values from configuration.
 
@@ -1187,6 +1282,52 @@ class ExecuteWriteToRabbitmqMixin():
         logging.debug(message_debug(910, redo_record))
 
 # -----------------------------------------------------------------------------
+# Class: ExecuteWriteToKafkaMixin
+# -----------------------------------------------------------------------------
+
+
+class ExecuteWriteToKafkaMixin():
+
+    def __init__(self, *args, **kwargs):
+        logging.info(message_info(132, "ExecuteWriteToKafkaMixin"))
+
+        kafka_redo_bootstrap_server = self.config.get('kafka_redo_bootstrap_server')
+        self.kafka_redo_topic = self.config.get('kafka_redo_topic')
+
+        # Kafka configuration.
+
+        kafka_producer_configuration = {
+            'bootstrap.servers': kafka_redo_bootstrap_server,
+        }
+        self.kafka_producer = confluent_kafka.Producer(kafka_producer_configuration)
+
+    def on_kafka_delivery(error, message):
+        message_topic = message.topic()
+        message_value = message.value()
+        message_error = message.error()
+        logging.debug(message_debug(103, message_topic, message_value, message_error, error))
+        if error is not None:
+            logging.warning(message_warn(408, message_topic, message_value, message_error, error))
+
+    def process_redo_record(self, redo_record=None):
+        '''
+        Process a single Senzing redo record.
+        Simply send to Kafka.
+        '''
+
+        try:
+            self.kafka_producer.produce(self.kafka_redo_topic, redo_record, on_delivery=self.on_kafka_delivery)
+            self.config['counter_queued_records'] += 1
+        except BufferError as err:
+            logging.warning(message_warn(404, err, counter, redo_record))
+        except confluent_kafka.KafkaException as err:
+            logging.warning(message_warn(405, err, counter, redo_record))
+        except NotImplemented as err:
+            logging.warning(message_warn(406, err, counter, redo_record))
+        except:
+            logging.warning(message_warn(407, err, counter, redo_record))
+
+# -----------------------------------------------------------------------------
 # Class: InputInternalMixin
 # -----------------------------------------------------------------------------
 
@@ -1198,10 +1339,10 @@ class InputInternalMixin():
 
     def redo_records(self):
         '''
-        Generator that produces Senzing redo records.
-        Note: This method uses the "internal queue".
-        This method can be sub-classed to use external queues.
+        Generator that produces Senzing redo records
+        retrieved from the "internal queue".
         '''
+
         while True:
             yield self.redo_queue.get()
 
@@ -1215,8 +1356,61 @@ class InputKafkaMixin():
     def __init__(self, *args, **kwargs):
         logging.info(message_info(132, "InputKafkaMixin"))
 
+        # Create Kafka client.
+
+        consumer_configuration = {
+            'bootstrap.servers': self.config.get('kafka_redo_bootstrap_server'),
+            'group.id': self.config.get("kafka_redo_group"),
+            'enable.auto.commit': False,
+            'auto.offset.reset': 'earliest'
+            }
+        self.consumer = confluent_kafka.Consumer(consumer_configuration)
+        self.consumer.subscribe([self.config.get("kafka_redo_topic")])
+
     def redo_records(self):
-        pass
+        '''
+        Generator that produces Senzing redo records
+        retrieved from a Kafka topic.
+        '''
+
+        while True:
+
+            # Get message from Kafka queue.
+            # Timeout quickly to allow other co-routines to process.
+
+            kafka_message = self.consumer.poll(1.0)
+
+            # Handle non-standard Kafka output.
+
+            if kafka_message is None:
+                continue
+            if kafka_message.error():
+                if kafka_message.error().code() == confluent_kafka.KafkaError._PARTITION_EOF:
+                    continue
+                else:
+                    logging.error(message_error(722, kafka_message.error()))
+                    continue
+
+            # Construct and verify Kafka message.
+
+            kafka_message_string = kafka_message.value().strip()
+            if not kafka_message_string:
+                continue
+            logging.debug(message_debug(903, threading.current_thread().name, kafka_message_string))
+            self.config['counter_queued_records'] += 1
+
+            # As a generator, give the value to the co-routine.
+
+            yield kafka_message_string
+
+            # After successful import into Senzing, tell Kafka we're done with message.
+
+            consumer.commit()
+
+        # Being outside of "while True", the following won't be executed.
+        # But it is good form to close resources.
+
+        consumer.close()
 
 # -----------------------------------------------------------------------------
 # Class: InputRabbitmqMixin
@@ -1318,12 +1512,40 @@ class OutputKafkaMixin():
     def __init__(self, *args, **kwargs):
         logging.info(message_info(132, "OutputKafkaMixin"))
 
+        self.kafka_failure_topic = self.config.get('kafka_failure_topic')
+        self.kafka_info_topic = self.config.get('kafka_info_topic')
+        kafka_redo_bootstrap_server = self.config.get('kafka_redo_bootstrap_server')
+
+        # Kafka configuration.
+
+        kafka_producer_configuration = {
+            'bootstrap.servers': kafka_redo_bootstrap_server,
+        }
+        self.kafka_producer = confluent_kafka.Producer(kafka_producer_configuration)
+
     def send_to_failure_queue(self, message):
-        pass
+        try:
+            self.kafka_producer.produce(self.kafka_failure_topic, message, on_delivery=on_kafka_delivery)
+        except BufferError as err:
+            logging.warning(message_warn(404, err, counter, line))
+        except confluent_kafka.KafkaException as err:
+            logging.warning(message_warn(405, err, counter, line))
+        except NotImplemented as err:
+            logging.warning(message_warn(406, err, counter, line))
+        except:
+            logging.warning(message_warn(407, err, counter, line))
 
     def send_to_info_queue(self, message):
-        pass
-
+        try:
+            self.kafka_producer.produce(self.kafka_info_topic, message, on_delivery=on_kafka_delivery)
+        except BufferError as err:
+            logging.warning(message_warn(404, err, counter, line))
+        except confluent_kafka.KafkaException as err:
+            logging.warning(message_warn(405, err, counter, line))
+        except NotImplemented as err:
+            logging.warning(message_warn(406, err, counter, line))
+        except:
+            logging.warning(message_warn(407, err, counter, line))
 # -----------------------------------------------------------------------------
 # Class: OutputRabbitmqMixin
 # -----------------------------------------------------------------------------
@@ -1522,6 +1744,17 @@ class ProcessRedoQueueKafkaWithInfoThread(ProcessRedoQueueThread):
             base.__init__(self, *args, **kwargs)
 
 # -----------------------------------------------------------------------------
+# Class: ProcessRedoQueueKafkaThread
+# -----------------------------------------------------------------------------
+
+
+class ProcessRedoQueueKafkaThread(ProcessRedoQueueThread, InputKafkaMixin, ExecuteMixin, OutputInternalMixin):
+
+    def __init__(self, *args, **kwargs):
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
+
+# -----------------------------------------------------------------------------
 # Class: ProcessRedoQueueRabbitmqThread
 # -----------------------------------------------------------------------------
 
@@ -1659,6 +1892,17 @@ class QueueRedoRecordsInternalThread(QueueRedoRecordsThread, QueueInternalMixin)
 
 
 class QueueRedoRecordsRabbitmqThread(WriteToQueueThread, InputInternalMixin, ExecuteWriteToRabbitmqMixin):
+
+    def __init__(self, *args, **kwargs):
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
+
+# -----------------------------------------------------------------------------
+# Class: QueueRedoRecordsKafkaThread
+# -----------------------------------------------------------------------------
+
+
+class QueueRedoRecordsKafkaThread(WriteToQueueThread, InputInternalMixin, ExecuteWriteToKafkaMixin):
 
     def __init__(self, *args, **kwargs):
         for base in type(self).__bases__:
@@ -1857,7 +2101,8 @@ def redo_processor(
     options_to_defaults_map={},
     read_thread=None,
     process_thread=None,
-    monitor_thread=None):
+    monitor_thread=None
+):
 
     # Get context from CLI, environment variables, and ini files.
 
@@ -1982,6 +2227,24 @@ def do_docker_acceptance_test(args):
     logging.info(exit_template(config))
 
 
+def do_read_from_kafka(args):
+    '''
+    Read Senzing redo records from Kafka and send to G2Engine.process().
+    "withinfo" is not returned.
+    '''
+
+    options_to_defaults_map = {
+        "kafka_redo_bootstrap_server": "kafka_bootstrap_server",
+    }
+
+    redo_processor(
+        args=args,
+        options_to_defaults_map=options_to_defaults_map,
+        process_thread=ProcessRedoQueueKafkaThread,
+        monitor_thread=MonitorThread
+    )
+
+
 def do_read_from_rabbitmq(args):
     '''
     Read Senzing redo records from RabbitMQ and send to G2Engine.process().
@@ -2092,6 +2355,25 @@ def do_sleep(args):
     # Epilog.
 
     logging.info(exit_template(config))
+
+
+def do_write_to_kafka(args):
+    '''
+    Read Senzing redo records from Senzing SDK and send to Kafka.
+    No processing is done.
+    '''
+
+    options_to_defaults_map = {
+        "kafka_redo_bootstrap_server": "kafka_bootstrap_server",
+    }
+
+    redo_processor(
+        args=args,
+        options_to_defaults_map=options_to_defaults_map,
+        read_thread=QueueRedoRecordsInternalThread,
+        process_thread=QueueRedoRecordsKafkaThread,
+        monitor_thread=MonitorThread
+    )
 
 
 def do_write_to_rabbitmq(args):
