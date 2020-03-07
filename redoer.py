@@ -117,12 +117,17 @@ configuration_locator = {
     "kafka_info_topic": {
         "default": "senzing-kafka-info-topic",
         "env": "SENZING_KAFKA_INFO_TOPIC",
-        "cli": "kafka--info-topic"
+        "cli": "kafka-info-topic"
     },
     "kafka_redo_group": {
         "default": "senzing-kafka-redo-group",
         "env": "SENZING_KAFKA_REDO_GROUP",
         "cli": "kafka-redo-group"
+    },
+    "kafka_redo_bootstrap_server": {
+        "default": None,
+        "env": "SENZING_KAFKA_REDO_BOOTSTRAP_SERVER",
+        "cli": "kafka-redo-bootstrap-server",
     },
     "kafka_redo_topic": {
         "default": "senzing-kafka-redo-topic",
@@ -287,7 +292,7 @@ def get_parser():
             },
         },
         'read-from-kafka': {
-            "help": 'Read Senzing redo records from RabbitMQ and send to G2Engine.process()',
+            "help": 'Read Senzing redo records from Kafka and send to G2Engine.process()',
             "arguments": {
                 "--engine-configuration-json": {
                     "dest": "engine_configuration_json",
@@ -363,6 +368,46 @@ def get_parser():
                     "dest": "rabbitmq_redo_queue",
                     "metavar": "SENZING_RABBITMQ_REDO_QUEUE",
                     "help": "RabbitMQ queue. Default: senzing-rabbitmq-redo-queue"
+                },
+                "--threads-per-process": {
+                    "dest": "threads_per_process",
+                    "metavar": "SENZING_THREADS_PER_PROCESS",
+                    "help": "Number of threads per process. Default: 4"
+                }
+            },
+        },
+        'read-from-kafka-withinfo': {
+            "help": 'Read Senzing redo records from Kafka and send to G2Engine.processRedoRecordWithInfo()',
+            "arguments": {
+                "--engine-configuration-json": {
+                    "dest": "engine_configuration_json",
+                    "metavar": "SENZING_ENGINE_CONFIGURATION_JSON",
+                    "help": "Advanced Senzing engine configuration. Default: none"
+                },
+                "--monitoring-period-in-seconds": {
+                    "dest": "monitoring_period_in_seconds",
+                    "metavar": "SENZING_MONITORING_PERIOD_IN_SECONDS",
+                    "help": "Period, in seconds, between monitoring reports. Default: 600"
+                },
+                "--kafka-bootstrap-server": {
+                    "dest": "kafka_bootstrap_server",
+                    "metavar": "SENZING_KAFKA_BOOTSTRAP_SERVER",
+                    "help": "Kafka bootstrap server. Default: localhost:9092"
+                },
+                "--kafka-redo-bootstrap-server": {
+                    "dest": "kafka_redo_bootstrap_server",
+                    "metavar": "SENZING_KAFKA_REDO_BOOTSTRAP_SERVER",
+                    "help": "Kafka bootstrap server. Default: SENZING_KAFKA_BOOTSTRAP_SERVER"
+                },
+                "--kafka-redo-group": {
+                    "dest": "kafka_redo_group",
+                    "metavar": "SENZING_KAFKA_REDO_GROUP",
+                    "help": "Kafka group. Default: senzing-kafka-redo-group"
+                },
+                "--kafka-redo-topic": {
+                    "dest": "kafka_redo_topic",
+                    "metavar": "SENZING_KAFKA_REDO_TOPIC",
+                    "help": "Kafka topic. Default: senzing-kafka-redo-topic"
                 },
                 "--threads-per-process": {
                     "dest": "threads_per_process",
@@ -639,6 +684,8 @@ MESSAGE_DEBUG = 900
 
 message_dictionary = {
     "100": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}I",
+    "103": "Kafka topic: {0}; message: {1}; error: {2}; error: {3}",
+
     "120": "Sleeping for requested delay of {0} seconds.",
     "121": "Adding JSON to failure queue: {0}",
     "125": "G2 engine statistics: {0}",
@@ -667,6 +714,11 @@ message_dictionary = {
     "298": "Exit {0}",
     "299": "{0}",
     "300": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}W",
+    "404": "Buffer error: {0} for {1}.",
+    "405": "Kafka error: {0} for {1}.",
+    "406": "Not implemented error: {0} for {1}.",
+    "407": "Unknown kafka error: {0} for {1}.",
+    "408": "Kafka topic: {0}; message: {1}; error: {2}; error: {3}",
     "410": "Unknown RabbitMQ error when connecting: {0}.",
     "411": "Unknown RabbitMQ error when adding record to queue: {0} for line {1}.",
     "412": "Could not connect to RabbitMQ host at {1}. The host name maybe wrong, it may not be ready, or your credentials are incorrect. See the RabbitMQ log for more details.",
@@ -955,7 +1007,10 @@ def get_configuration(args):
     result['g2_database_url_specific'] = get_g2_database_url_specific(result.get("g2_database_url_generic"))
 
     result['counter_processed_records'] = 0
+    result['counter_queued_failure'] = 0
+    result['counter_queued_info'] = 0
     result['counter_queued_records'] = 0
+    result['counter_redo_records'] = 0
 
     return result
 
@@ -1057,9 +1112,14 @@ class MonitorThread(threading.Thread):
 
         # Initialize variables.
 
-        last_processed_records = 0
-        last_queued_records = 0
-        last_time = time.time()
+        last = {
+            "counter_processed_records": 0,
+            "counter_queued_failure": 0,
+            "counter_queued_info": 0,
+            "counter_queued_records": 0,
+            "counter_redo_records": 0,
+        }
+
         last_log_license = time.time()
         log_license_period_in_seconds = self.config.get("log_license_period_in_seconds")
 
@@ -1076,7 +1136,13 @@ class MonitorThread(threading.Thread):
 
         while active_workers > 0:
 
+            logging.info(message_info(129, threading.current_thread().name))
+
+
             time.sleep(sleep_time_in_seconds)
+
+            logging.info(message_info(129, "AWAKE!"))
+
 
             # Calculate active Threads.
 
@@ -1094,7 +1160,6 @@ class MonitorThread(threading.Thread):
 
             now = time.time()
             uptime = now - self.config.get('start_time', now)
-            elapsed_time = now - last_time
             elapsed_log_license = now - last_log_license
 
             # Log license periodically to show days left in license.
@@ -1103,25 +1168,21 @@ class MonitorThread(threading.Thread):
                 log_license(self.config)
                 last_log_license = now
 
-            # Calculate rates.
-
-            processed_records_total = self.config['counter_processed_records']
-            processed_records_interval = processed_records_total - last_processed_records
-
-            queued_records_total = self.config['counter_queued_records']
-            queued_records_interval = queued_records_total - last_queued_records
-
             # Construct and log monitor statistics.
 
             stats = {
-                "processed_records_interval": processed_records_interval,
-                "processed_records_total": processed_records_total,
-                "queued_records_interval": queued_records_interval,
-                "queued_records_total": queued_records_total,
                 "uptime": int(uptime),
                 "workers_total": len(self.workers),
                 "workers_active": active_workers,
             }
+
+            for key, value in last.items():
+                total = self.config.get(key)
+                internal = total - value
+                stats["{0}-total".format(key)] = total
+                stats["{0}-interval".format(key)] = interval
+                last[key] = total
+
             logging.info(message_info(127, json.dumps(stats, sort_keys=True)))
 
             # Log engine statistics with sorted JSON keys.
@@ -1130,12 +1191,6 @@ class MonitorThread(threading.Thread):
             self.g2_engine.stats(g2_engine_stats_response)
             g2_engine_stats_dictionary = json.loads(g2_engine_stats_response.decode())
             logging.info(message_info(125, json.dumps(g2_engine_stats_dictionary, sort_keys=True)))
-
-            # Store values for next iteration of loop.
-
-            last_processed_records = processed_records_total
-            last_queued_records = queued_records_total
-            last_time = now
 
 # -----------------------------------------------------------------------------
 # Class: ExecuteMixin
@@ -1238,18 +1293,6 @@ class ExecuteWriteToRabbitmqMixin():
         rabbitmq_username = self.config.get("rabbitmq_redo_username")
         rabbitmq_password = self.config.get("rabbitmq_redo_password")
 
-        # Connect to the RabbitMQ host for failure_channel.
-
-        try:
-            credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
-            connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host, credentials=credentials))
-            self.failure_channel = connection.channel()
-            self.failure_channel.queue_declare(queue=self.rabbitmq_queue)
-        except (pika.exceptions.AMQPConnectionError) as err:
-            exit_error(412, err, rabbitmq_host)
-        except BaseException as err:
-            exit_error(410, err)
-
         # Connect to the RabbitMQ host for info_channel.
 
         try:
@@ -1344,6 +1387,7 @@ class InputInternalMixin():
         '''
 
         while True:
+            self.config['counter_queued_records'] += 1
             yield self.redo_queue.get()
 
 # -----------------------------------------------------------------------------
@@ -1498,9 +1542,11 @@ class OutputInternalMixin():
 
     def send_to_failure_queue(self, message):
         logging.info(message_info(121, message))
+        self.config['counter_queued_failure'] += 1
 
     def send_to_info_queue(self, message):
         logging.info(message_info(128, message))
+        self.config['counter_queued_info'] += 1
 
 # -----------------------------------------------------------------------------
 # Class: OutputKafkaMixin
@@ -1512,40 +1558,55 @@ class OutputKafkaMixin():
     def __init__(self, *args, **kwargs):
         logging.info(message_info(132, "OutputKafkaMixin"))
 
+        # Kafka configuration for failure queuing.
+
         self.kafka_failure_topic = self.config.get('kafka_failure_topic')
-        self.kafka_info_topic = self.config.get('kafka_info_topic')
-        kafka_redo_bootstrap_server = self.config.get('kafka_redo_bootstrap_server')
-
-        # Kafka configuration.
-
         kafka_producer_configuration = {
-            'bootstrap.servers': kafka_redo_bootstrap_server,
+            'bootstrap.servers': self.config.get('kafka_failure_bootstrap_server'),
         }
-        self.kafka_producer = confluent_kafka.Producer(kafka_producer_configuration)
+        self.kafka_failure_producer = confluent_kafka.Producer(kafka_producer_configuration)
+
+        # Kafka configuration for info queuing.
+
+        self.kafka_info_topic = self.config.get('kafka_info_topic')
+        kafka_producer_configuration = {
+            'bootstrap.servers': self.config.get('kafka_info_bootstrap_server'),
+        }
+        self.kafka_info_producer = confluent_kafka.Producer(kafka_producer_configuration)
+
+    def on_kafka_delivery(error, message):
+        message_topic = message.topic()
+        message_value = message.value()
+        message_error = message.error()
+        logging.debug(message_debug(103, message_topic, message_value, message_error, error))
+        if error is not None:
+            logging.warning(message_warn(408, message_topic, message_value, message_error, error))
 
     def send_to_failure_queue(self, message):
         try:
-            self.kafka_producer.produce(self.kafka_failure_topic, message, on_delivery=on_kafka_delivery)
+            self.kafka_failure_producer.produce(self.kafka_failure_topic, message, on_delivery=self.on_kafka_delivery)
+            self.config['counter_queued_failure'] += 1
         except BufferError as err:
-            logging.warning(message_warn(404, err, counter, line))
+            logging.warning(message_warn(404, err, counter, message))
         except confluent_kafka.KafkaException as err:
-            logging.warning(message_warn(405, err, counter, line))
+            logging.warning(message_warn(405, err, counter, message))
         except NotImplemented as err:
-            logging.warning(message_warn(406, err, counter, line))
+            logging.warning(message_warn(406, err, counter, message))
         except:
-            logging.warning(message_warn(407, err, counter, line))
+            logging.warning(message_warn(407, err, counter, message))
 
     def send_to_info_queue(self, message):
         try:
-            self.kafka_producer.produce(self.kafka_info_topic, message, on_delivery=on_kafka_delivery)
+            self.kafka_info_producer.produce(self.kafka_info_topic, message, on_delivery=self.on_kafka_delivery)
+            self.config['counter_queued_info'] += 1
         except BufferError as err:
-            logging.warning(message_warn(404, err, counter, line))
+            logging.warning(message_warn(404, err, counter, message))
         except confluent_kafka.KafkaException as err:
-            logging.warning(message_warn(405, err, counter, line))
+            logging.warning(message_warn(405, err, counter, message))
         except NotImplemented as err:
-            logging.warning(message_warn(406, err, counter, line))
+            logging.warning(message_warn(406, err, counter, message))
         except:
-            logging.warning(message_warn(407, err, counter, line))
+            logging.warning(message_warn(407, err, counter, message))
 # -----------------------------------------------------------------------------
 # Class: OutputRabbitmqMixin
 # -----------------------------------------------------------------------------
@@ -1601,6 +1662,7 @@ class OutputRabbitmqMixin():
                     delivery_mode=1  # Make message non-persistent
                 )
             )
+            self.config['counter_queued_failure'] += 1
         except BaseException as err:
             logging.warn(message_warning(411, err, message))
         logging.info(message_info(121, message))
@@ -1615,6 +1677,7 @@ class OutputRabbitmqMixin():
                     delivery_mode=1  # Make message non-persistent
                 )
             )
+            self.config['counter_queued_info'] += 1
         except BaseException as err:
             logging.warn(message_warning(411, err, message))
         logging.debug(message_debug(910, message))
@@ -1726,7 +1789,18 @@ class ProcessRedoQueueInternalThread(ProcessRedoQueueThread, InputInternalMixin,
 # -----------------------------------------------------------------------------
 
 
-class ProcessRedoQueueInternalWithInfoThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWithInfoMixin, OutputRabbitmqMixin):
+class ProcessRedoQueueInternalWithInfoThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWithInfoMixin, OutputInternalMixin):
+
+    def __init__(self, *args, **kwargs):
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
+
+# -----------------------------------------------------------------------------
+# Class: ProcessRedoQueueRabbitmqWithInfoThread
+# -----------------------------------------------------------------------------
+
+
+class ProcessRedoQueueRabbitmqWithInfoThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWithInfoMixin, OutputRabbitmqMixin):
 
     def __init__(self, *args, **kwargs):
         for base in type(self).__bases__:
@@ -1737,7 +1811,7 @@ class ProcessRedoQueueInternalWithInfoThread(ProcessRedoQueueThread, InputIntern
 # -----------------------------------------------------------------------------
 
 
-class ProcessRedoQueueKafkaWithInfoThread(ProcessRedoQueueThread):
+class ProcessRedoQueueKafkaWithInfoThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWithInfoMixin, OutputKafkaMixin):
 
     def __init__(self, *args, **kwargs):
         for base in type(self).__bases__:
@@ -1814,6 +1888,7 @@ class QueueRedoRecordsThread(threading.Thread):
 
             # Return generator value.
 
+            self.config['counter_redo_records'] += 1
             yield redo_record
 
     def run(self):
@@ -2265,6 +2340,26 @@ def do_read_from_rabbitmq(args):
     )
 
 
+def do_read_from_kafka_withinfo(args):
+    '''
+    Read Senzing redo records from Kafka and send to G2Engine.processRedoRecordWithInfo().
+    "withinfo" returned is sent to Kafka.
+    '''
+
+    options_to_defaults_map = {
+        "kafka_failure_bootstrap_server": "kafka_bootstrap_server",
+        "kafka_info_bootstrap_server": "kafka_bootstrap_server",
+        "kafka_redo_bootstrap_server": "kafka_bootstrap_server",
+    }
+
+    redo_processor(
+        args=args,
+        options_to_defaults_map=options_to_defaults_map,
+        process_thread=ProcessRedoQueueKafkaThread,
+        monitor_thread=MonitorThread
+    )
+
+
 def do_read_from_rabbitmq_withinfo(args):
     '''
     Read Senzing redo records from RabbitMQ and send to G2Engine.processRedoRecordWithInfo().
@@ -2288,8 +2383,7 @@ def do_read_from_rabbitmq_withinfo(args):
 def do_redo(args):
     '''
     Read Senzing redo records from Senzing SDK and send to G2Engine.process().
-    No external queues are used.
-    "withinfo" is not returned.
+    No external queues are used.  "withinfo" is not returned.
     '''
 
     redo_processor(
@@ -2300,11 +2394,30 @@ def do_redo(args):
     )
 
 
+def do_redo_withinfo_kafka(args):
+    '''
+    Read Senzing redo records from Senzing SDK and send to G2Engine.processRedoRecordWithInfo().
+    No external queues are used.  "withinfo" returned is sent to kafka.
+    '''
+
+    options_to_defaults_map = {
+        "kafka_failure_bootstrap_server": "kafka_bootstrap_server",
+        "kafka_info_bootstrap_server": "kafka_bootstrap_server",
+    }
+
+    redo_processor(
+        args=args,
+        options_to_defaults_map=options_to_defaults_map,
+        read_thread=QueueRedoRecordsInternalThread,
+        process_thread=ProcessRedoQueueKafkaWithInfoThread,
+        monitor_thread=MonitorThread
+    )
+
+
 def do_redo_withinfo_rabbitmq(args):
     '''
     Read Senzing redo records from Senzing SDK and send to G2Engine.processRedoRecordWithInfo().
-    No external queues are used.
-    "withinfo" returned is sent to RabbitMQ.
+    No external queues are used.  "withinfo" returned is sent to RabbitMQ.
     '''
 
     options_to_defaults_map = {
@@ -2320,7 +2433,7 @@ def do_redo_withinfo_rabbitmq(args):
         args=args,
         options_to_defaults_map=options_to_defaults_map,
         read_thread=QueueRedoRecordsInternalThread,
-        process_thread=ProcessRedoQueueInternalWithInfoThread,
+        process_thread=ProcessRedoQueueRabbitmqWithInfoThread,
         monitor_thread=MonitorThread
     )
 
