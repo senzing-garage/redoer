@@ -1912,20 +1912,12 @@ class QueueRedoRecordsThread(threading.Thread):
 # Classes created with mixins
 # =============================================================================
 
-# -----------------------------------------------------------------------------
-# Class: ProcessRedoQueueInternalThread
-# -----------------------------------------------------------------------------
-
 
 class ProcessRedoQueueInternalThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteMixin, OutputInternalMixin):
 
     def __init__(self, *args, **kwargs):
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
-
-# -----------------------------------------------------------------------------
-# Class: ProcessRedoQueueInternalWithInfoThread
-# -----------------------------------------------------------------------------
 
 
 class ProcessRedoQueueInternalWithInfoThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWithInfoMixin, OutputInternalMixin):
@@ -1934,20 +1926,12 @@ class ProcessRedoQueueInternalWithInfoThread(ProcessRedoQueueThread, InputIntern
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
-# -----------------------------------------------------------------------------
-# Class: ProcessRedoQueueKafkaThread
-# -----------------------------------------------------------------------------
-
 
 class ProcessRedoQueueKafkaThread(ProcessRedoQueueThread, InputKafkaMixin, ExecuteMixin, OutputInternalMixin):
 
     def __init__(self, *args, **kwargs):
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
-
-# -----------------------------------------------------------------------------
-# Class: ProcessRedoQueueKafkaWithInfoThread
-# -----------------------------------------------------------------------------
 
 
 class ProcessRedoQueueKafkaWithInfoThread(ProcessRedoQueueThread, InputKafkaMixin, ExecuteWithInfoMixin, OutputKafkaMixin):
@@ -1956,20 +1940,12 @@ class ProcessRedoQueueKafkaWithInfoThread(ProcessRedoQueueThread, InputKafkaMixi
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
-# -----------------------------------------------------------------------------
-# Class: ProcessRedoQueueRabbitmqThread
-# -----------------------------------------------------------------------------
-
 
 class ProcessRedoQueueRabbitmqThread(ProcessRedoQueueThread, InputRabbitmqMixin, ExecuteMixin, OutputInternalMixin):
 
     def __init__(self, *args, **kwargs):
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
-
-# -----------------------------------------------------------------------------
-# Class: ProcessRedoQueueRabbitmqWithInfoThread
-# -----------------------------------------------------------------------------
 
 
 class ProcessRedoQueueRabbitmqWithInfoThread(ProcessRedoQueueThread, InputRabbitmqMixin, ExecuteWithInfoMixin, OutputRabbitmqMixin):
@@ -1978,10 +1954,6 @@ class ProcessRedoQueueRabbitmqWithInfoThread(ProcessRedoQueueThread, InputRabbit
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
-# -----------------------------------------------------------------------------
-# Class: QueueRedoRecordsThread
-# -----------------------------------------------------------------------------
-
 
 class QueueRedoRecordsInternalThread(QueueRedoRecordsThread, QueueInternalMixin):
 
@@ -1989,20 +1961,12 @@ class QueueRedoRecordsInternalThread(QueueRedoRecordsThread, QueueInternalMixin)
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
-# -----------------------------------------------------------------------------
-# Class: QueueRedoRecordsRabbitmqThread
-# -----------------------------------------------------------------------------
-
 
 class QueueRedoRecordsRabbitmqThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWriteToRabbitmqMixin):
 
     def __init__(self, *args, **kwargs):
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
-
-# -----------------------------------------------------------------------------
-# Class: QueueRedoRecordsKafkaThread
-# -----------------------------------------------------------------------------
 
 
 class QueueRedoRecordsKafkaThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWriteToKafkaMixin):
