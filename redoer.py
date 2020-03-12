@@ -1454,7 +1454,7 @@ class ExecuteWithInfoMixin():
 
         # Allow user to manipulate the message.
 
-        filtered_info_json = self.filter_info_message(line=info_json)
+        filtered_info_json = self.filter_info_message(message=info_json)
 
 #         # Put "info" on info queue.
 
