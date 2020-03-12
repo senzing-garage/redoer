@@ -41,7 +41,7 @@ except ImportError:
 __all__ = []
 __version__ = "1.1.0"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2020-03-06'
+__updated__ = '2020-03-11'
 
 # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 SENZING_PRODUCT_ID = "5010"
@@ -705,6 +705,7 @@ message_dictionary = {
     "167": "         Contract: {0}",
     "168": "  Expiration time: EXPIRED {0} days ago",
     "180": "User-supplied Governor loaded from {0}.",
+    "181": "Monitoring halted. No active workers.",
     "292": "Configuration change detected.  Old: {0} New: {1}",
     "293": "For information on warnings and errors, see https://github.com/Senzing/stream-loader#errors",
     "294": "Version: {0}  Updated: {1}",
@@ -758,6 +759,7 @@ message_dictionary = {
     "903": "Thread: {0} Processing message: {1}",
     "904": "{0} processed: {1}",
     "905": "{0} processing redo record: {1}",
+    "906": "Queue: {0} Message: {1}",
     "910": "Adding JSON to info queue: {0}",
     "998": "Debugging enabled.",
     "999": "{0}",
@@ -1006,11 +1008,18 @@ def get_configuration(args):
 
     result['g2_database_url_specific'] = get_g2_database_url_specific(result.get("g2_database_url_generic"))
 
-    result['counter_processed_records'] = 0
-    result['counter_queued_failure'] = 0
-    result['counter_queued_info'] = 0
-    result['counter_queued_records'] = 0
-    result['counter_redo_records'] = 0
+    # Initialize counters.
+
+    counters = [
+        'processed_redo_records',
+        'sent_to_failure_queue',
+        'sent_to_info_queue',
+        'sent_to_redo_queue',
+        'received_from_redo_queue',
+        'redo_records_from_senzing_engine'
+    ]
+    for counter in counters:
+        result[counter] = 0
 
     return result
 
@@ -1113,11 +1122,12 @@ class MonitorThread(threading.Thread):
         # Initialize variables.
 
         last = {
-            "counter_processed_records": 0,
-            "counter_queued_failure": 0,
-            "counter_queued_info": 0,
-            "counter_queued_records": 0,
-            "counter_redo_records": 0,
+            "processed_redo_records": 0,
+            "sent_to_failure_queue": 0,
+            "sent_to_info_queue": 0,
+            "sent_to_redo_queue": 0,
+            "received_from_redo_queue": 0,
+            "redo_records_from_senzing_engine": 0,
         }
 
         last_log_license = time.time()
@@ -1136,13 +1146,7 @@ class MonitorThread(threading.Thread):
 
         while active_workers > 0:
 
-            logging.info(message_info(129, threading.current_thread().name))
-
-
             time.sleep(sleep_time_in_seconds)
-
-            logging.info(message_info(129, "AWAKE!"))
-
 
             # Calculate active Threads.
 
@@ -1176,11 +1180,17 @@ class MonitorThread(threading.Thread):
                 "workers_active": active_workers,
             }
 
-            for key, value in last.items():
+            # Tricky code.  Avoid modifying dictionary in the loop.
+            # i.e. "for key, value in last.items():" would loop infinitely
+            # because of "last[key] = total".
+
+            keys = last.keys()
+            for key in keys:
+                value = last.get(key)
                 total = self.config.get(key)
-                internal = total - value
-                stats["{0}-total".format(key)] = total
-                stats["{0}-interval".format(key)] = interval
+                interval = total - value
+                stats["{0}_total".format(key)] = total
+                stats["{0}_interval".format(key)] = interval
                 last[key] = total
 
             logging.info(message_info(127, json.dumps(stats, sort_keys=True)))
@@ -1191,6 +1201,8 @@ class MonitorThread(threading.Thread):
             self.g2_engine.stats(g2_engine_stats_response)
             g2_engine_stats_dictionary = json.loads(g2_engine_stats_response.decode())
             logging.info(message_info(125, json.dumps(g2_engine_stats_dictionary, sort_keys=True)))
+
+        logging.info(message_info(181))
 
 # -----------------------------------------------------------------------------
 # Class: ExecuteMixin
@@ -1211,14 +1223,14 @@ class ExecuteMixin():
 
         try:
             self.g2_engine.process(redo_record)
-            self.config['counter_processed_records'] += 1
+            self.config['processed_redo_records'] += 1
         except G2Exception.G2ModuleNotInitialized as err:
             exit_error(707, err, redo_record_bytearray.decode())
         except Exception as err:
             if self.is_g2_default_configuration_changed():
                 self.update_active_g2_configuration()
                 return_code = self.g2_engine.process(redo_record)
-                self.config['counter_processed_records'] += 1
+                self.config['processed_redo_records'] += 1
             else:
                 exit_error(709, err)
 
@@ -1251,7 +1263,7 @@ class ExecuteWithInfoMixin():
 
         try:
             self.g2_engine.processRedoRecordWithInfo(redo_record_bytearray, info_bytearray, self.g2_engine_flags)
-            self.config['counter_processed_records'] += 1
+            self.config['processed_redo_records'] += 1
         except G2Exception.G2ModuleNotInitialized as err:
             self.send_to_failure_queue(redo_record)
             exit_error(707, err, info_bytearray.decode())
@@ -1259,7 +1271,7 @@ class ExecuteWithInfoMixin():
             if self.is_g2_default_configuration_changed():
                 self.update_active_g2_configuration()
                 self.g2_engine.processRedoRecordWithInfo(redo_record_bytearray, info_bytearray)
-                self.config['counter_processed_records'] += 1
+                self.config['processed_redo_records'] += 1
             else:
                 self.send_to_failure_queue(redo_record)
                 exit_error(709, err)
@@ -1319,7 +1331,8 @@ class ExecuteWriteToRabbitmqMixin():
                     delivery_mode=1  # Make message non-persistent
                 )
             )
-            self.config['counter_queued_records'] += 1
+            self.config['sent_to_redo_queue'] += 1
+            logging.debug(message_debug(906, self.rabbitmq_queue, redo_record))
         except BaseException as err:
             logging.warn(message_warning(411, err, redo_record))
         logging.debug(message_debug(910, redo_record))
@@ -1359,8 +1372,12 @@ class ExecuteWriteToKafkaMixin():
         '''
 
         try:
+
+            logging.info(message_info(129, "MJD: ExecuteWriteToKafkaMixin-1"))
+
             self.kafka_producer.produce(self.kafka_redo_topic, redo_record, on_delivery=self.on_kafka_delivery)
-            self.config['counter_queued_records'] += 1
+            self.config['sent_to_redo_queue'] += 1
+            logging.debug(message_debug(906, self.kafka_redo_topic, redo_record))
         except BufferError as err:
             logging.warning(message_warn(404, err, counter, redo_record))
         except confluent_kafka.KafkaException as err:
@@ -1387,8 +1404,15 @@ class InputInternalMixin():
         '''
 
         while True:
-            self.config['counter_queued_records'] += 1
-            yield self.redo_queue.get()
+
+            logging.info(message_info(129, "MJD: InputInternalMixin-1"))
+
+            message = self.redo_queue.get()
+            self.config['received_from_redo_queue'] += 1
+
+            logging.info(message_info(129, "MJD: InputInternalMixin-2: {0}".format(message)))
+
+            yield message
 
 # -----------------------------------------------------------------------------
 # Class: InputKafkaMixin
@@ -1441,7 +1465,7 @@ class InputKafkaMixin():
             if not kafka_message_string:
                 continue
             logging.debug(message_debug(903, threading.current_thread().name, kafka_message_string))
-            self.config['counter_queued_records'] += 1
+            self.config['received_from_redo_queue'] += 1
 
             # As a generator, give the value to the co-routine.
 
@@ -1449,12 +1473,12 @@ class InputKafkaMixin():
 
             # After successful import into Senzing, tell Kafka we're done with message.
 
-            consumer.commit()
+            self.consumer.commit()
 
         # Being outside of "while True", the following won't be executed.
         # But it is good form to close resources.
 
-        consumer.close()
+        self.consumer.close()
 
 # -----------------------------------------------------------------------------
 # Class: InputRabbitmqMixin
@@ -1500,7 +1524,7 @@ class InputRabbitmqMixin():
         message = body.decode()
         logging.debug(message_debug(904, threading.current_thread().name, message))
         self.redo_queue.put(message)
-        self.config['counter_queued_records'] += 1
+        self.config['received_from_redo_queue'] += 1
         channel.basic_ack(delivery_tag=method.delivery_tag)
 
     def redo_records(self):
@@ -1542,11 +1566,11 @@ class OutputInternalMixin():
 
     def send_to_failure_queue(self, message):
         logging.info(message_info(121, message))
-        self.config['counter_queued_failure'] += 1
+        self.config['sent_to_failure_queue'] += 1
 
     def send_to_info_queue(self, message):
         logging.info(message_info(128, message))
-        self.config['counter_queued_info'] += 1
+        self.config['sent_to_info_queue'] += 1
 
 # -----------------------------------------------------------------------------
 # Class: OutputKafkaMixin
@@ -1585,7 +1609,7 @@ class OutputKafkaMixin():
     def send_to_failure_queue(self, message):
         try:
             self.kafka_failure_producer.produce(self.kafka_failure_topic, message, on_delivery=self.on_kafka_delivery)
-            self.config['counter_queued_failure'] += 1
+            self.config['sent_to_failure_queue'] += 1
         except BufferError as err:
             logging.warning(message_warn(404, err, counter, message))
         except confluent_kafka.KafkaException as err:
@@ -1598,7 +1622,7 @@ class OutputKafkaMixin():
     def send_to_info_queue(self, message):
         try:
             self.kafka_info_producer.produce(self.kafka_info_topic, message, on_delivery=self.on_kafka_delivery)
-            self.config['counter_queued_info'] += 1
+            self.config['sent_to_info_queue'] += 1
         except BufferError as err:
             logging.warning(message_warn(404, err, counter, message))
         except confluent_kafka.KafkaException as err:
@@ -1662,7 +1686,7 @@ class OutputRabbitmqMixin():
                     delivery_mode=1  # Make message non-persistent
                 )
             )
-            self.config['counter_queued_failure'] += 1
+            self.config['sent_to_failure_queue'] += 1
         except BaseException as err:
             logging.warn(message_warning(411, err, message))
         logging.info(message_info(121, message))
@@ -1677,7 +1701,7 @@ class OutputRabbitmqMixin():
                     delivery_mode=1  # Make message non-persistent
                 )
             )
-            self.config['counter_queued_info'] += 1
+            self.config['sent_to_info_queue'] += 1
         except BaseException as err:
             logging.warn(message_warning(411, err, message))
         logging.debug(message_debug(910, message))
@@ -1872,6 +1896,7 @@ class QueueRedoRecordsThread(threading.Thread):
 
             try:
                 return_code = self.g2_engine.getRedoRecord(redo_record_bytearray)
+                self.config['redo_records_from_senzing_engine'] += 1
             except G2Exception.G2ModuleNotInitialized as err:
                 exit_error(702, err, redo_record_bytearray.decode())
             except Exception as err:
@@ -1888,7 +1913,6 @@ class QueueRedoRecordsThread(threading.Thread):
 
             # Return generator value.
 
-            self.config['counter_redo_records'] += 1
             yield redo_record
 
     def run(self):
@@ -1903,7 +1927,6 @@ class QueueRedoRecordsThread(threading.Thread):
         for redo_record in self.redo_records():
             logging.debug(message_debug(902, threading.current_thread().name, redo_record))
             self.send_to_redo_queue(redo_record)
-            self.config['counter_queued_records'] += 1
 
         # Log message for thread exiting.
 
@@ -1935,7 +1958,12 @@ class WriteToQueueThread(threading.Thread):
         # Process redo records.
 
         return_code = 0
+
+        logging.info(message_info(129, "MJD: WriteToQueueThread-1"))
+
         for redo_record in self.redo_records():
+
+            logging.info(message_info(129, "MJD: WriteToQueueThread-2"))
 
             # Invoke Governor.
 
