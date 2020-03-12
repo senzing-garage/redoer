@@ -41,7 +41,7 @@ except ImportError:
 __all__ = []
 __version__ = "1.1.0"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2020-03-11'
+__updated__ = '2020-03-12'
 
 # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 SENZING_PRODUCT_ID = "5010"
@@ -2383,7 +2383,7 @@ def do_read_from_kafka_withinfo(args):
     redo_processor(
         args=args,
         options_to_defaults_map=options_to_defaults_map,
-        process_thread=ProcessRedoQueueKafkaThread,
+        process_thread=ProcessRedoQueueKafkaWithinfoThread,
         monitor_thread=MonitorThread
     )
 
@@ -2403,7 +2403,7 @@ def do_read_from_rabbitmq_withinfo(args):
     redo_processor(
         args=args,
         options_to_defaults_map=options_to_defaults_map,
-        process_thread=ProcessRedoQueueRabbitmqThread,
+        process_thread=ProcessRedoQueueRabbitmqWithinfoThread,
         monitor_thread=MonitorThread
     )
 
