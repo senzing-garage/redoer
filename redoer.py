@@ -1204,6 +1204,186 @@ class MonitorThread(threading.Thread):
 
         logging.info(message_info(181))
 
+# =============================================================================
+# Mixins: Input*
+#   Methods:
+#   - redo_records()
+#   Classes:
+#   - InputInternalMixin - Gets redo records from internal queue.
+#   - InputKafkaMixin - Gets redo records from Kafka
+#   - InputRabbitmqMixin - Gets redo records from RabbitMQ
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Class: InputInternalMixin
+# -----------------------------------------------------------------------------
+
+
+class InputInternalMixin():
+
+    def __init__(self, *args, **kwargs):
+        logging.info(message_info(132, "InputInternalMixin"))
+
+    def redo_records(self):
+        '''
+        Generator that produces Senzing redo records
+        retrieved from the "internal queue".
+        '''
+
+        while True:
+
+            logging.info(message_info(129, "MJD: InputInternalMixin-1"))
+
+            message = self.redo_queue.get()
+            self.config['received_from_redo_queue'] += 1
+
+            logging.info(message_info(129, "MJD: InputInternalMixin-2: {0}".format(message)))
+
+            yield message
+
+# -----------------------------------------------------------------------------
+# Class: InputKafkaMixin
+# -----------------------------------------------------------------------------
+
+
+class InputKafkaMixin():
+
+    def __init__(self, *args, **kwargs):
+        logging.info(message_info(132, "InputKafkaMixin"))
+
+        # Create Kafka client.
+
+        consumer_configuration = {
+            'bootstrap.servers': self.config.get('kafka_redo_bootstrap_server'),
+            'group.id': self.config.get("kafka_redo_group"),
+            'enable.auto.commit': False,
+            'auto.offset.reset': 'earliest'
+            }
+        self.consumer = confluent_kafka.Consumer(consumer_configuration)
+        self.consumer.subscribe([self.config.get("kafka_redo_topic")])
+
+    def redo_records(self):
+        '''
+        Generator that produces Senzing redo records
+        retrieved from a Kafka topic.
+        '''
+
+        while True:
+
+            # Get message from Kafka queue.
+            # Timeout quickly to allow other co-routines to process.
+
+            kafka_message = self.consumer.poll(1.0)
+
+            # Handle non-standard Kafka output.
+
+            if kafka_message is None:
+                continue
+            if kafka_message.error():
+                if kafka_message.error().code() == confluent_kafka.KafkaError._PARTITION_EOF:
+                    continue
+                else:
+                    logging.error(message_error(722, kafka_message.error()))
+                    continue
+
+            # Construct and verify Kafka message.
+
+            kafka_message_string = kafka_message.value().strip()
+            if not kafka_message_string:
+                continue
+            logging.debug(message_debug(903, threading.current_thread().name, kafka_message_string))
+            self.config['received_from_redo_queue'] += 1
+
+            # As a generator, give the value to the co-routine.
+
+            yield kafka_message_string
+
+            # After successful import into Senzing, tell Kafka we're done with message.
+
+            self.consumer.commit()
+
+        # Being outside of "while True", the following won't be executed.
+        # But it is good form to close resources.
+
+        self.consumer.close()
+
+# -----------------------------------------------------------------------------
+# Class: InputRabbitmqMixin
+# -----------------------------------------------------------------------------
+
+
+class InputRabbitmqMixin():
+
+    def __init__(self, *args, **kwargs):
+        logging.info(message_info(132, "InputRabbitmqMixin"))
+
+        # Pull values from configuration.
+
+        rabbitmq_host = self.config.get("rabbitmq_redo_host")
+        rabbitmq_queue = self.config.get("rabbitmq_redo_queue")
+        rabbitmq_username = self.config.get("rabbitmq_redo_username")
+        rabbitmq_password = self.config.get("rabbitmq_redo_password")
+        rabbitmq_prefetch_count = self.config.get("rabbitmq_prefetch_count")
+
+        # A very small internal queue to transfer data from RabbitMQ callback() to generator.
+
+        self.redo_queue = multiprocessing.Queue(2)
+
+        # Connect to the RabbitMQ host for failure_channel.
+
+        try:
+            credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
+            connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host, credentials=credentials))
+            self.channel = connection.channel()
+            self.channel.queue_declare(queue=rabbitmq_queue)
+            self.channel.basic_qos(prefetch_count=rabbitmq_prefetch_count)
+            self.channel.basic_consume(on_message_callback=self.callback, queue=rabbitmq_queue)
+        except pika.exceptions.AMQPConnectionError as err:
+            exit_error(562, err, rabbitmq_host)
+        except BaseException as err:
+            exit_error(561, err)
+
+    def callback(self, channel, method, header, body):
+        '''
+        Called by Pika whenever a message is received.
+        Read from RabbitMQ and put into a very small internal queue.
+        '''
+        message = body.decode()
+        logging.debug(message_debug(904, threading.current_thread().name, message))
+        self.redo_queue.put(message)
+        self.config['received_from_redo_queue'] += 1
+        channel.basic_ack(delivery_tag=method.delivery_tag)
+
+    def redo_records(self):
+        '''
+        Generator that produces Senzing redo records.
+        This method reads from a very small "internal queue"
+        populated by the RabbitMQ callback() method.
+        '''
+
+        # Start consuming.
+
+        try:
+            self.channel.start_consuming()
+        except pika.exceptions.ChannelClosed:
+            logging.info(message_info(130, threading.current_thread().name))
+
+        # Return value from very small internal queue.
+
+        while True:
+            yield self.redo_queue.get()
+
+# =============================================================================
+# Mixins: Execute*
+#   Methods:
+#   - process_redo_record(redo_record)
+#   Classes:
+#   - ExecuteMixin - calls g2_engine.process(...)
+#   - ExecuteWithInfoMixin - g2_engine.processRedoRecordWithInfo(...)
+#   - ExecuteWriteToRabbitmqMixin - Sends redo record to RabbitMQ
+#   - ExecuteWriteToKafkaMixin - Sends redo record to Kafka
+# =============================================================================
+
 # -----------------------------------------------------------------------------
 # Class: ExecuteMixin
 # -----------------------------------------------------------------------------
@@ -1387,170 +1567,15 @@ class ExecuteWriteToKafkaMixin():
         except:
             logging.warning(message_warn(407, err, counter, redo_record))
 
-# -----------------------------------------------------------------------------
-# Class: InputInternalMixin
-# -----------------------------------------------------------------------------
-
-
-class InputInternalMixin():
-
-    def __init__(self, *args, **kwargs):
-        logging.info(message_info(132, "InputInternalMixin"))
-
-    def redo_records(self):
-        '''
-        Generator that produces Senzing redo records
-        retrieved from the "internal queue".
-        '''
-
-        while True:
-
-            logging.info(message_info(129, "MJD: InputInternalMixin-1"))
-
-            message = self.redo_queue.get()
-            self.config['received_from_redo_queue'] += 1
-
-            logging.info(message_info(129, "MJD: InputInternalMixin-2: {0}".format(message)))
-
-            yield message
-
-# -----------------------------------------------------------------------------
-# Class: InputKafkaMixin
-# -----------------------------------------------------------------------------
-
-
-class InputKafkaMixin():
-
-    def __init__(self, *args, **kwargs):
-        logging.info(message_info(132, "InputKafkaMixin"))
-
-        # Create Kafka client.
-
-        consumer_configuration = {
-            'bootstrap.servers': self.config.get('kafka_redo_bootstrap_server'),
-            'group.id': self.config.get("kafka_redo_group"),
-            'enable.auto.commit': False,
-            'auto.offset.reset': 'earliest'
-            }
-        self.consumer = confluent_kafka.Consumer(consumer_configuration)
-        self.consumer.subscribe([self.config.get("kafka_redo_topic")])
-
-    def redo_records(self):
-        '''
-        Generator that produces Senzing redo records
-        retrieved from a Kafka topic.
-        '''
-
-        while True:
-
-            # Get message from Kafka queue.
-            # Timeout quickly to allow other co-routines to process.
-
-            kafka_message = self.consumer.poll(1.0)
-
-            # Handle non-standard Kafka output.
-
-            if kafka_message is None:
-                continue
-            if kafka_message.error():
-                if kafka_message.error().code() == confluent_kafka.KafkaError._PARTITION_EOF:
-                    continue
-                else:
-                    logging.error(message_error(722, kafka_message.error()))
-                    continue
-
-            # Construct and verify Kafka message.
-
-            kafka_message_string = kafka_message.value().strip()
-            if not kafka_message_string:
-                continue
-            logging.debug(message_debug(903, threading.current_thread().name, kafka_message_string))
-            self.config['received_from_redo_queue'] += 1
-
-            # As a generator, give the value to the co-routine.
-
-            yield kafka_message_string
-
-            # After successful import into Senzing, tell Kafka we're done with message.
-
-            self.consumer.commit()
-
-        # Being outside of "while True", the following won't be executed.
-        # But it is good form to close resources.
-
-        self.consumer.close()
-
-# -----------------------------------------------------------------------------
-# Class: InputRabbitmqMixin
-# -----------------------------------------------------------------------------
-
-
-class InputRabbitmqMixin():
-
-    def __init__(self, *args, **kwargs):
-        logging.info(message_info(132, "InputRabbitmqMixin"))
-
-        # Pull values from configuration.
-
-        rabbitmq_host = self.config.get("rabbitmq_redo_host")
-        rabbitmq_queue = self.config.get("rabbitmq_redo_queue")
-        rabbitmq_username = self.config.get("rabbitmq_redo_username")
-        rabbitmq_password = self.config.get("rabbitmq_redo_password")
-        rabbitmq_prefetch_count = self.config.get("rabbitmq_prefetch_count")
-
-        # A very small internal queue to transfer data from RabbitMQ callback() to generator.
-
-        self.redo_queue = multiprocessing.Queue(2)
-
-        # Connect to the RabbitMQ host for failure_channel.
-
-        try:
-            credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
-            connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host, credentials=credentials))
-            self.channel = connection.channel()
-            self.channel.queue_declare(queue=rabbitmq_queue)
-            self.channel.basic_qos(prefetch_count=rabbitmq_prefetch_count)
-            self.channel.basic_consume(on_message_callback=self.callback, queue=rabbitmq_queue)
-        except pika.exceptions.AMQPConnectionError as err:
-            exit_error(562, err, rabbitmq_host)
-        except BaseException as err:
-            exit_error(561, err)
-
-    def callback(self, channel, method, header, body):
-        '''
-        Called by Pika whenever a message is received.
-        Read from RabbitMQ and put into a very small internal queue.
-        '''
-        message = body.decode()
-        logging.debug(message_debug(904, threading.current_thread().name, message))
-        self.redo_queue.put(message)
-        self.config['received_from_redo_queue'] += 1
-        channel.basic_ack(delivery_tag=method.delivery_tag)
-
-    def redo_records(self):
-        '''
-        Generator that produces Senzing redo records.
-        This method reads from a very small "internal queue"
-        populated by the RabbitMQ callback() method.
-        '''
-
-        # Start consuming.
-
-        try:
-            self.channel.start_consuming()
-        except pika.exceptions.ChannelClosed:
-            logging.info(message_info(130, threading.current_thread().name))
-
-        # Return value from very small internal queue.
-
-        while True:
-            yield self.redo_queue.get()
-
 # =============================================================================
 # Mixins: Output*
-#    Methods:
-#        send_to_failure_queue(message)
-#        send_to_info_queue(message):
+#   Methods:
+#   - send_to_failure_queue(message)
+#   - send_to_info_queue(message)
+#   Classes:
+#   - OutputInternalMixin - Send to log
+#   - OutputKafkaMixin - Send to Kafka
+#   - OutputRabbitmqMixin - Send to RabbitMQ
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -1706,6 +1731,14 @@ class OutputRabbitmqMixin():
             logging.warn(message_warning(411, err, message))
         logging.debug(message_debug(910, message))
 
+# =============================================================================
+# Mixins: Queue*
+#   Methods:
+#   - send_to_redo_queue(redo_record)
+#   Classes:
+#   - QueueInternalMixin - Send to internal queue
+# =============================================================================
+
 # -----------------------------------------------------------------------------
 # Class: QueueInternalMixin
 # -----------------------------------------------------------------------------
@@ -1718,6 +1751,15 @@ class QueueInternalMixin():
 
     def send_to_redo_queue(self, redo_record):
         self.redo_queue.put(redo_record)
+
+# =============================================================================
+# Threads: Process*, Queue*
+#   Methods:
+#   - run
+#   Classes:
+#   - ProcessRedoQueueThread - Call process_redo_record(redo_record)
+#   - QueueRedoRecordsThread - Call send_to_redo_queue(redo_record)
+# =============================================================================
 
 # -----------------------------------------------------------------------------
 # Class: ProcessRedoQueueThread
@@ -1735,8 +1777,8 @@ class ProcessRedoQueueThread(threading.Thread):
         self.info_filter = InfoFilter(g2_engine=g2_engine)
         self.redo_queue = redo_queue
 
-    def filter_info_message(self, line=None):
-        return self.info_filter.filter(line=line)
+    def filter_info_message(self, message=None):
+        return self.info_filter.filter(line=message)
 
     def govern(self):
         return self.governor.govern()
@@ -1796,72 +1838,6 @@ class ProcessRedoQueueThread(threading.Thread):
         # Log message for thread exiting.
 
         logging.info(message_info(130, threading.current_thread().name))
-
-# -----------------------------------------------------------------------------
-# Class: ProcessRedoQueueInternalThread
-# -----------------------------------------------------------------------------
-
-
-class ProcessRedoQueueInternalThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteMixin, OutputInternalMixin):
-
-    def __init__(self, *args, **kwargs):
-        for base in type(self).__bases__:
-            base.__init__(self, *args, **kwargs)
-
-# -----------------------------------------------------------------------------
-# Class: ProcessRedoQueueInternalWithInfoThread
-# -----------------------------------------------------------------------------
-
-
-class ProcessRedoQueueInternalWithInfoThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWithInfoMixin, OutputInternalMixin):
-
-    def __init__(self, *args, **kwargs):
-        for base in type(self).__bases__:
-            base.__init__(self, *args, **kwargs)
-
-# -----------------------------------------------------------------------------
-# Class: ProcessRedoQueueRabbitmqWithInfoThread
-# -----------------------------------------------------------------------------
-
-
-class ProcessRedoQueueRabbitmqWithInfoThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWithInfoMixin, OutputRabbitmqMixin):
-
-    def __init__(self, *args, **kwargs):
-        for base in type(self).__bases__:
-            base.__init__(self, *args, **kwargs)
-
-# -----------------------------------------------------------------------------
-# Class: ProcessRedoQueueKafkaWithInfoThread
-# -----------------------------------------------------------------------------
-
-
-class ProcessRedoQueueKafkaWithInfoThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWithInfoMixin, OutputKafkaMixin):
-
-    def __init__(self, *args, **kwargs):
-        for base in type(self).__bases__:
-            base.__init__(self, *args, **kwargs)
-
-# -----------------------------------------------------------------------------
-# Class: ProcessRedoQueueKafkaThread
-# -----------------------------------------------------------------------------
-
-
-class ProcessRedoQueueKafkaThread(ProcessRedoQueueThread, InputKafkaMixin, ExecuteMixin, OutputInternalMixin):
-
-    def __init__(self, *args, **kwargs):
-        for base in type(self).__bases__:
-            base.__init__(self, *args, **kwargs)
-
-# -----------------------------------------------------------------------------
-# Class: ProcessRedoQueueRabbitmqThread
-# -----------------------------------------------------------------------------
-
-
-class ProcessRedoQueueRabbitmqThread(ProcessRedoQueueThread, InputRabbitmqMixin, ExecuteMixin, OutputInternalMixin):
-
-    def __init__(self, *args, **kwargs):
-        for base in type(self).__bases__:
-            base.__init__(self, *args, **kwargs)
 
 # -----------------------------------------------------------------------------
 # Class: QueueRedoRecordsThread
@@ -1932,51 +1908,75 @@ class QueueRedoRecordsThread(threading.Thread):
 
         logging.info(message_info(130, threading.current_thread().name))
 
+# =============================================================================
+# Classes created with mixins
+# =============================================================================
+
 # -----------------------------------------------------------------------------
-# Class: WriteToQueueThread
+# Class: ProcessRedoQueueInternalThread
 # -----------------------------------------------------------------------------
 
 
-class WriteToQueueThread(threading.Thread):
+class ProcessRedoQueueInternalThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteMixin, OutputInternalMixin):
 
-    def __init__(self, config=None, g2_engine=None, g2_configuration_manager=None, redo_queue=None):
-        threading.Thread.__init__(self)
-        self.config = config
-        self.governor = Governor(g2_engine=None, hint="redoer.WriteToQueueThread")
-        self.redo_queue = redo_queue
+    def __init__(self, *args, **kwargs):
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
 
-    def govern(self):
-        return self.governor.govern()
+# -----------------------------------------------------------------------------
+# Class: ProcessRedoQueueInternalWithInfoThread
+# -----------------------------------------------------------------------------
 
-    def run(self):
-        ''' Process Senzing redo records. '''
 
-        # Show that thread is starting in the log.
+class ProcessRedoQueueInternalWithInfoThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWithInfoMixin, OutputInternalMixin):
 
-        logging.info(message_info(129, threading.current_thread().name))
+    def __init__(self, *args, **kwargs):
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
 
-        # Process redo records.
+# -----------------------------------------------------------------------------
+# Class: ProcessRedoQueueKafkaThread
+# -----------------------------------------------------------------------------
 
-        return_code = 0
 
-        logging.info(message_info(129, "MJD: WriteToQueueThread-1"))
+class ProcessRedoQueueKafkaThread(ProcessRedoQueueThread, InputKafkaMixin, ExecuteMixin, OutputInternalMixin):
 
-        for redo_record in self.redo_records():
+    def __init__(self, *args, **kwargs):
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
 
-            logging.info(message_info(129, "MJD: WriteToQueueThread-2"))
+# -----------------------------------------------------------------------------
+# Class: ProcessRedoQueueKafkaWithInfoThread
+# -----------------------------------------------------------------------------
 
-            # Invoke Governor.
 
-            self.govern()
+class ProcessRedoQueueKafkaWithInfoThread(ProcessRedoQueueThread, InputKafkaMixin, ExecuteWithInfoMixin, OutputKafkaMixin):
 
-            # Process record.
+    def __init__(self, *args, **kwargs):
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
 
-            logging.debug(message_debug(903, threading.current_thread().name, redo_record))
-            self.process_redo_record(redo_record)
+# -----------------------------------------------------------------------------
+# Class: ProcessRedoQueueRabbitmqThread
+# -----------------------------------------------------------------------------
 
-        # Log message for thread exiting.
 
-        logging.info(message_info(130, threading.current_thread().name))
+class ProcessRedoQueueRabbitmqThread(ProcessRedoQueueThread, InputRabbitmqMixin, ExecuteMixin, OutputInternalMixin):
+
+    def __init__(self, *args, **kwargs):
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
+
+# -----------------------------------------------------------------------------
+# Class: ProcessRedoQueueRabbitmqWithInfoThread
+# -----------------------------------------------------------------------------
+
+
+class ProcessRedoQueueRabbitmqWithInfoThread(ProcessRedoQueueThread, InputRabbitmqMixin, ExecuteWithInfoMixin, OutputRabbitmqMixin):
+
+    def __init__(self, *args, **kwargs):
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
 
 # -----------------------------------------------------------------------------
 # Class: QueueRedoRecordsThread
@@ -1994,7 +1994,7 @@ class QueueRedoRecordsInternalThread(QueueRedoRecordsThread, QueueInternalMixin)
 # -----------------------------------------------------------------------------
 
 
-class QueueRedoRecordsRabbitmqThread(WriteToQueueThread, InputInternalMixin, ExecuteWriteToRabbitmqMixin):
+class QueueRedoRecordsRabbitmqThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWriteToRabbitmqMixin):
 
     def __init__(self, *args, **kwargs):
         for base in type(self).__bases__:
@@ -2005,7 +2005,7 @@ class QueueRedoRecordsRabbitmqThread(WriteToQueueThread, InputInternalMixin, Exe
 # -----------------------------------------------------------------------------
 
 
-class QueueRedoRecordsKafkaThread(WriteToQueueThread, InputInternalMixin, ExecuteWriteToKafkaMixin):
+class QueueRedoRecordsKafkaThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWriteToKafkaMixin):
 
     def __init__(self, *args, **kwargs):
         for base in type(self).__bases__:
@@ -2383,7 +2383,7 @@ def do_read_from_kafka_withinfo(args):
     redo_processor(
         args=args,
         options_to_defaults_map=options_to_defaults_map,
-        process_thread=ProcessRedoQueueKafkaWithinfoThread,
+        process_thread=ProcessRedoQueueKafkaWithInfoThread,
         monitor_thread=MonitorThread
     )
 
@@ -2403,7 +2403,7 @@ def do_read_from_rabbitmq_withinfo(args):
     redo_processor(
         args=args,
         options_to_defaults_map=options_to_defaults_map,
-        process_thread=ProcessRedoQueueRabbitmqWithinfoThread,
+        process_thread=ProcessRedoQueueRabbitmqWithInfoThread,
         monitor_thread=MonitorThread
     )
 
