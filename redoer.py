@@ -1207,7 +1207,7 @@ class MonitorThread(threading.Thread):
 # =============================================================================
 # Mixins: Input*
 #   Methods:
-#   - redo_records()
+#   - redo_records() -> list[str]
 #   Classes:
 #   - InputInternalMixin - Gets redo records from internal queue.
 #   - InputKafkaMixin - Gets redo records from Kafka
@@ -1231,15 +1231,9 @@ class InputInternalMixin():
         '''
 
         while True:
-
-            logging.info(message_info(129, "MJD: InputInternalMixin-1"))
-
             message = self.redo_queue.get()
             self.config['received_from_redo_queue'] += 1
-
-            logging.info(message_info(129, "MJD: InputInternalMixin-2: {0}".format(message)))
-
-            yield message
+            yield str(message)
 
 # -----------------------------------------------------------------------------
 # Class: InputKafkaMixin
@@ -1296,7 +1290,7 @@ class InputKafkaMixin():
 
             # As a generator, give the value to the co-routine.
 
-            yield kafka_message_string
+            yield str(kafka_message_string)
 
             # After successful import into Senzing, tell Kafka we're done with message.
 
@@ -1371,7 +1365,7 @@ class InputRabbitmqMixin():
         # Return value from very small internal queue.
 
         while True:
-            yield self.redo_queue.get()
+            yield str(self.redo_queue.get())
 
 # =============================================================================
 # Mixins: Execute*
@@ -1552,9 +1546,6 @@ class ExecuteWriteToKafkaMixin():
         '''
 
         try:
-
-            logging.info(message_info(129, "MJD: ExecuteWriteToKafkaMixin-1"))
-
             self.kafka_producer.produce(self.kafka_redo_topic, redo_record, on_delivery=self.on_kafka_delivery)
             self.config['sent_to_redo_queue'] += 1
             logging.debug(message_debug(906, self.kafka_redo_topic, redo_record))
@@ -1889,7 +1880,7 @@ class QueueRedoRecordsThread(threading.Thread):
 
             # Return generator value.
 
-            yield redo_record
+            yield str(redo_record)
 
     def run(self):
         '''Get redo records from Senzing.  Put redo records in internal queue.'''
