@@ -1094,11 +1094,11 @@ class Governor:
 
 class InfoFilter:
 
-    def __init__(self, g2_engine=None):
+    def __init__(self, g2_engine=None, *args, **kwargs):
         self.g2_engine = g2_engine
 
-    def filter(self, line=None):
-        return line
+    def filter(self, message=None, *args, **kwargs):
+        return message
 
 # -----------------------------------------------------------------------------
 # Class: MonitorThread
@@ -1208,7 +1208,7 @@ class MonitorThread(threading.Thread):
 # =============================================================================
 # Mixins: Input*
 #   Methods:
-#   - redo_records() -> list[str]
+#   - redo_records() -> generated list of strings
 #   Classes:
 #   - InputInternalMixin - Gets redo records from internal queue.
 #   - InputKafkaMixin - Gets redo records from Kafka
@@ -1232,9 +1232,10 @@ class InputInternalMixin():
         '''
 
         while True:
-            message = str(self.redo_queue.get())
+            message = self.redo_queue.get()
             logging.debug(message_debug(903, threading.current_thread().name, message))
             self.config['received_from_redo_queue'] += 1
+            assert type(message) == str
             yield message
 
 # -----------------------------------------------------------------------------
@@ -1284,15 +1285,16 @@ class InputKafkaMixin():
 
             # Construct and verify Kafka message.
 
-            kafka_message_string = str(kafka_message.value().strip())
-            if not kafka_message_string:
+            message = kafka_message.value().strip()
+            if not message:
                 continue
             self.config['received_from_redo_queue'] += 1
 
             # As a generator, give the value to the co-routine.
 
-            logging.debug(message_debug(903, threading.current_thread().name, kafka_message_string))
-            yield kafka_message_string
+            logging.debug(message_debug(903, threading.current_thread().name, message))
+            assert type(message) == str
+            yield message
 
             # After successful import into Senzing, tell Kafka we're done with message.
 
@@ -1368,6 +1370,7 @@ class InputRabbitmqMixin():
         while True:
             message = str(self.redo_queue.get())
             logging.debug(message_debug(903, threading.current_thread().name, message))
+            assert type(message) == str
             yield message
 
 # =============================================================================
@@ -1398,19 +1401,24 @@ class ExecuteMixin():
         The method can be sub-classed to call other G2Engine methods.
         '''
 
+        # Transform redo_record string to bytearray.
+
+        assert type(redo_record) == str
+        redo_record_bytearray = bytearray(redo_record.encode())
+
         try:
             logging.debug(message_debug(905, threading.current_thread().name, redo_record))
-            return_code = self.g2_engine.process(redo_record)
+            return_code = self.g2_engine.process(redo_record_bytearray)
             if return_code != 0:
                 logging.warning(message_warning(301, return_code, redo_record))
             self.config['processed_redo_records'] += 1
         except G2Exception.G2ModuleNotInitialized as err:
-            exit_error(707, err, redo_record_bytearray.decode())
+            exit_error(707, err, redo_record)
         except Exception as err:
             if self.is_g2_default_configuration_changed():
                 self.update_active_g2_configuration()
                 logging.debug(message_debug(906, threading.current_thread().name, redo_record))
-                return_code = self.g2_engine.process(redo_record)
+                return_code = self.g2_engine.process(redo_record_bytearray)
                 if return_code != 0:
                     logging.warning(message_warning(301, return_code, redo_record))
                 self.config['processed_redo_records'] += 1
@@ -1436,6 +1444,7 @@ class ExecuteWithInfoMixin():
 
         # Transform redo_record string to bytearray.
 
+        assert type(redo_record) == str
         redo_record_bytearray = bytearray(redo_record.encode())
 
         # Additional parameters for processRedoRecordWithInfo().
@@ -1508,6 +1517,9 @@ class ExecuteWriteToRabbitmqMixin():
         Process a single Senzing redo record.
         Simply send to RabbitMQ.
         '''
+
+        assert type(redo_record) == str
+
         try:
             logging.debug(message_debug(909, threading.current_thread().name, self.rabbitmq_queue, redo_record))
             self.info_channel.basic_publish(
@@ -1555,6 +1567,7 @@ class ExecuteWriteToKafkaMixin():
         Process a single Senzing redo record.
         Simply send to Kafka.
         '''
+        assert type(redo_record) == str
 
         try:
             logging.debug(message_debug(909, threading.current_thread().name, self.kafka_redo_topic, redo_record))
@@ -1592,10 +1605,12 @@ class OutputInternalMixin():
         logging.info(message_info(132, "OutputInternalMixin"))
 
     def send_to_failure_queue(self, message):
+        assert type(message) == str
         logging.info(message_info(121, message))
         self.config['sent_to_failure_queue'] += 1
 
     def send_to_info_queue(self, message):
+        assert type(message) == str
         logging.info(message_info(128, message))
         self.config['sent_to_info_queue'] += 1
 
@@ -1634,6 +1649,7 @@ class OutputKafkaMixin():
             logging.warning(message_warn(408, message_topic, message_value, message_error, error))
 
     def send_to_failure_queue(self, message):
+        assert type(message) == str
         try:
             logging.debug(message_debug(909, threading.current_thread().name, self.kafka_failure_topic, message))
             self.kafka_failure_producer.produce(self.kafka_failure_topic, message, on_delivery=self.on_kafka_delivery)
@@ -1648,6 +1664,7 @@ class OutputKafkaMixin():
             logging.warning(message_warn(407, err, message))
 
     def send_to_info_queue(self, message):
+        assert type(message) == str
         try:
             logging.debug(message_debug(909, threading.current_thread().name, self.kafka_info_topic, message))
             self.kafka_info_producer.produce(self.kafka_info_topic, message, on_delivery=self.on_kafka_delivery)
@@ -1707,6 +1724,7 @@ class OutputRabbitmqMixin():
             exit_error(410, err)
 
     def send_to_failure_queue(self, message):
+        assert type(message) == str
         try:
             logging.debug(message_debug(909, threading.current_thread().name, self.rabbitmq_failure_queue, message))
             self.failure_channel.basic_publish(
@@ -1723,6 +1741,7 @@ class OutputRabbitmqMixin():
         logging.info(message_info(121, message))
 
     def send_to_info_queue(self, message):
+        assert type(message) == str
         try:
             logging.debug(message_debug(909, threading.current_thread().name, self.rabbitmq_info_queue, message))
             self.info_channel.basic_publish(
@@ -1756,6 +1775,7 @@ class QueueInternalMixin():
         logging.info(message_info(132, "QueueInternalMixin"))
 
     def send_to_redo_queue(self, redo_record):
+        assert type(redo_record) == str
         self.redo_queue.put(redo_record)
 
 # =============================================================================
@@ -1784,7 +1804,8 @@ class ProcessRedoQueueThread(threading.Thread):
         self.redo_queue = redo_queue
 
     def filter_info_message(self, message=None):
-        return self.info_filter.filter(line=message)
+        assert type(redo_record) == str
+        return self.info_filter.filter(message=message)
 
     def govern(self):
         return self.governor.govern()
@@ -1887,7 +1908,7 @@ class QueueRedoRecordsThread(threading.Thread):
 
             # If redo record was not received, sleep and try again.
 
-            redo_record = str(redo_record_bytearray.decode())
+            redo_record = redo_record_bytearray.decode()
             if not redo_record:
                 time.sleep(redo_sleep_time_in_seconds)
                 continue
@@ -1896,6 +1917,7 @@ class QueueRedoRecordsThread(threading.Thread):
 
             logging.debug(message_debug(901, threading.current_thread().name, redo_record))
             self.config['redo_records_from_senzing_engine'] += 1
+            assert type(redo_record) == str
             yield redo_record
 
     def run(self):
