@@ -41,7 +41,7 @@ except ImportError:
 __all__ = []
 __version__ = "1.1.0"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2020-03-12'
+__updated__ = '2020-03-13'
 
 # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 SENZING_PRODUCT_ID = "5010"
@@ -715,6 +715,8 @@ message_dictionary = {
     "298": "Exit {0}",
     "299": "{0}",
     "300": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}W",
+    "301": "g2_engine.process() return_code: {0} redo_record: {1}",
+    "302": "g2_engine.processRedoRecordWithInfo() return_code: {0} redo_record: {1}",
     "404": "Buffer error: {0} for {1}.",
     "405": "Kafka error: {0} for {1}.",
     "406": "Not implemented error: {0} for {1}.",
@@ -1396,7 +1398,9 @@ class ExecuteMixin():
         '''
 
         try:
-            self.g2_engine.process(redo_record)
+            return_code = self.g2_engine.process(redo_record)
+            if return_code != 0:
+                logging.warning(message_warning(301, return_code, redo_record))
             self.config['processed_redo_records'] += 1
         except G2Exception.G2ModuleNotInitialized as err:
             exit_error(707, err, redo_record_bytearray.decode())
@@ -1404,6 +1408,8 @@ class ExecuteMixin():
             if self.is_g2_default_configuration_changed():
                 self.update_active_g2_configuration()
                 return_code = self.g2_engine.process(redo_record)
+                if return_code != 0:
+                    logging.warning(message_warning(301, return_code, redo_record))
                 self.config['processed_redo_records'] += 1
             else:
                 exit_error(709, err)
@@ -1436,7 +1442,9 @@ class ExecuteWithInfoMixin():
         info_bytearray = bytearray()
 
         try:
-            self.g2_engine.processRedoRecordWithInfo(redo_record_bytearray, info_bytearray, self.g2_engine_flags)
+            return_code = self.g2_engine.processRedoRecordWithInfo(redo_record_bytearray, info_bytearray, self.g2_engine_flags)
+            if return_code != 0:
+                logging.warning(message_warning(302, return_code, redo_record))
             self.config['processed_redo_records'] += 1
         except G2Exception.G2ModuleNotInitialized as err:
             self.send_to_failure_queue(redo_record)
@@ -1444,7 +1452,9 @@ class ExecuteWithInfoMixin():
         except Exception as err:
             if self.is_g2_default_configuration_changed():
                 self.update_active_g2_configuration()
-                self.g2_engine.processRedoRecordWithInfo(redo_record_bytearray, info_bytearray)
+                return_code = self.g2_engine.processRedoRecordWithInfo(redo_record_bytearray, info_bytearray)
+                if return_code != 0:
+                    logging.warning(message_warning(302, return_code, redo_record))
                 self.config['processed_redo_records'] += 1
             else:
                 self.send_to_failure_queue(redo_record)
