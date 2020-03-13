@@ -685,7 +685,6 @@ MESSAGE_DEBUG = 900
 message_dictionary = {
     "100": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}I",
     "103": "Kafka topic: {0}; message: {1}; error: {2}; error: {3}",
-
     "120": "Sleeping for requested delay of {0} seconds.",
     "121": "Adding JSON to failure queue: {0}",
     "125": "G2 engine statistics: {0}",
@@ -757,12 +756,13 @@ message_dictionary = {
     "898": "Could not initialize G2Engine with '{0}'. Error: {1}",
     "899": "{0}",
     "900": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}D",
+    "901": "Thread: {0} g2_engine.getRedoRecord() -> {1}",
     "902": "Thread: {0} Added message to internal queue: {1}",
-    "903": "Thread: {0} Processing message: {1}",
-    "904": "{0} processed: {1}",
-    "905": "{0} processing redo record: {1}",
-    "906": "Queue: {0} Message: {1}",
-    "910": "Adding JSON to info queue: {0}",
+    "903": "Thread: {0} redo_records() -> {1}",
+    "905": "Thread: {0} processing redo record: {1}",
+    "906": "Thread: {0} re-processing redo record: {1}",
+    "908": "Thread: {0} g2_engine.reinitV2({1})",
+    "909": "Thread: {0} Queue: {0} Message: {1}",
     "998": "Debugging enabled.",
     "999": "{0}",
 }
@@ -1233,9 +1233,10 @@ class InputInternalMixin():
         '''
 
         while True:
-            message = self.redo_queue.get()
+            message = str(self.redo_queue.get())
+            logging.debug(message_debug(903, threading.current_thread().name, message))
             self.config['received_from_redo_queue'] += 1
-            yield str(message)
+            yield message
 
 # -----------------------------------------------------------------------------
 # Class: InputKafkaMixin
@@ -1284,15 +1285,15 @@ class InputKafkaMixin():
 
             # Construct and verify Kafka message.
 
-            kafka_message_string = kafka_message.value().strip()
+            kafka_message_string = str(kafka_message.value().strip())
             if not kafka_message_string:
                 continue
-            logging.debug(message_debug(903, threading.current_thread().name, kafka_message_string))
             self.config['received_from_redo_queue'] += 1
 
             # As a generator, give the value to the co-routine.
 
-            yield str(kafka_message_string)
+            logging.debug(message_debug(903, threading.current_thread().name, kafka_message_string))
+            yield kafka_message_string
 
             # After successful import into Senzing, tell Kafka we're done with message.
 
@@ -1345,7 +1346,6 @@ class InputRabbitmqMixin():
         Read from RabbitMQ and put into a very small internal queue.
         '''
         message = body.decode()
-        logging.debug(message_debug(904, threading.current_thread().name, message))
         self.redo_queue.put(message)
         self.config['received_from_redo_queue'] += 1
         channel.basic_ack(delivery_tag=method.delivery_tag)
@@ -1367,7 +1367,9 @@ class InputRabbitmqMixin():
         # Return value from very small internal queue.
 
         while True:
-            yield str(self.redo_queue.get())
+            message = str(self.redo_queue.get())
+            logging.debug(message_debug(903, threading.current_thread().name, message))
+            yield message
 
 # =============================================================================
 # Mixins: Execute*
@@ -1398,6 +1400,7 @@ class ExecuteMixin():
         '''
 
         try:
+            logging.debug(message_debug(905, threading.current_thread().name, redo_record))
             return_code = self.g2_engine.process(redo_record)
             if return_code != 0:
                 logging.warning(message_warning(301, return_code, redo_record))
@@ -1407,6 +1410,7 @@ class ExecuteMixin():
         except Exception as err:
             if self.is_g2_default_configuration_changed():
                 self.update_active_g2_configuration()
+                logging.debug(message_debug(906, threading.current_thread().name, redo_record))
                 return_code = self.g2_engine.process(redo_record)
                 if return_code != 0:
                     logging.warning(message_warning(301, return_code, redo_record))
@@ -1431,8 +1435,6 @@ class ExecuteWithInfoMixin():
         This method uses G2Engine.processRedoRecordWithInfo()
         '''
 
-        logging.debug(message_debug(905, threading.current_thread().name, redo_record))
-
         # Transform redo_record string to bytearray.
 
         redo_record_bytearray = bytearray(redo_record.encode())
@@ -1442,6 +1444,7 @@ class ExecuteWithInfoMixin():
         info_bytearray = bytearray()
 
         try:
+            logging.debug(message_debug(905, threading.current_thread().name, redo_record))
             return_code = self.g2_engine.processRedoRecordWithInfo(redo_record_bytearray, info_bytearray, self.g2_engine_flags)
             if return_code != 0:
                 logging.warning(message_warning(302, return_code, redo_record))
@@ -1452,6 +1455,7 @@ class ExecuteWithInfoMixin():
         except Exception as err:
             if self.is_g2_default_configuration_changed():
                 self.update_active_g2_configuration()
+                logging.debug(message_debug(906, threading.current_thread().name, redo_record))
                 return_code = self.g2_engine.processRedoRecordWithInfo(redo_record_bytearray, info_bytearray)
                 if return_code != 0:
                     logging.warning(message_warning(302, return_code, redo_record))
@@ -1470,7 +1474,6 @@ class ExecuteWithInfoMixin():
 
         if filtered_info_json:
             self.send_to_info_queue(filtered_info_json)
-            logging.debug(message_debug(904, threading.current_thread().name, filtered_info_json))
 
 # -----------------------------------------------------------------------------
 # Class: ExecuteWriteToRabbitmqMixin
@@ -1507,6 +1510,7 @@ class ExecuteWriteToRabbitmqMixin():
         Simply send to RabbitMQ.
         '''
         try:
+            logging.debug(message_debug(909, threading.current_thread().name, self.rabbitmq_queue, redo_record))
             self.info_channel.basic_publish(
                 exchange='',
                 routing_key=self.rabbitmq_queue,
@@ -1516,10 +1520,8 @@ class ExecuteWriteToRabbitmqMixin():
                 )
             )
             self.config['sent_to_redo_queue'] += 1
-            logging.debug(message_debug(906, self.rabbitmq_queue, redo_record))
         except BaseException as err:
             logging.warn(message_warning(411, err, redo_record))
-        logging.debug(message_debug(910, redo_record))
 
 # -----------------------------------------------------------------------------
 # Class: ExecuteWriteToKafkaMixin
@@ -1556,17 +1558,17 @@ class ExecuteWriteToKafkaMixin():
         '''
 
         try:
+            logging.debug(message_debug(909, threading.current_thread().name, self.kafka_redo_topic, redo_record))
             self.kafka_producer.produce(self.kafka_redo_topic, redo_record, on_delivery=self.on_kafka_delivery)
             self.config['sent_to_redo_queue'] += 1
-            logging.debug(message_debug(906, self.kafka_redo_topic, redo_record))
         except BufferError as err:
-            logging.warning(message_warn(404, err, counter, redo_record))
+            logging.warning(message_warn(404, err, redo_record))
         except confluent_kafka.KafkaException as err:
-            logging.warning(message_warn(405, err, counter, redo_record))
+            logging.warning(message_warn(405, err, redo_record))
         except NotImplemented as err:
-            logging.warning(message_warn(406, err, counter, redo_record))
+            logging.warning(message_warn(406, err, redo_record))
         except:
-            logging.warning(message_warn(407, err, counter, redo_record))
+            logging.warning(message_warn(407, err, redo_record))
 
 # =============================================================================
 # Mixins: Output*
@@ -1634,29 +1636,32 @@ class OutputKafkaMixin():
 
     def send_to_failure_queue(self, message):
         try:
+            logging.debug(message_debug(909, threading.current_thread().name, self.kafka_failure_topic, message))
             self.kafka_failure_producer.produce(self.kafka_failure_topic, message, on_delivery=self.on_kafka_delivery)
             self.config['sent_to_failure_queue'] += 1
         except BufferError as err:
-            logging.warning(message_warn(404, err, counter, message))
+            logging.warning(message_warn(404, err, message))
         except confluent_kafka.KafkaException as err:
-            logging.warning(message_warn(405, err, counter, message))
+            logging.warning(message_warn(405, err, message))
         except NotImplemented as err:
-            logging.warning(message_warn(406, err, counter, message))
+            logging.warning(message_warn(406, err, message))
         except:
-            logging.warning(message_warn(407, err, counter, message))
+            logging.warning(message_warn(407, err, message))
 
     def send_to_info_queue(self, message):
         try:
+            logging.debug(message_debug(909, threading.current_thread().name, self.kafka_info_topic, message))
             self.kafka_info_producer.produce(self.kafka_info_topic, message, on_delivery=self.on_kafka_delivery)
             self.config['sent_to_info_queue'] += 1
         except BufferError as err:
-            logging.warning(message_warn(404, err, counter, message))
+            logging.warning(message_warn(404, err, message))
         except confluent_kafka.KafkaException as err:
-            logging.warning(message_warn(405, err, counter, message))
+            logging.warning(message_warn(405, err, message))
         except NotImplemented as err:
-            logging.warning(message_warn(406, err, counter, message))
+            logging.warning(message_warn(406, err, message))
         except:
-            logging.warning(message_warn(407, err, counter, message))
+            logging.warning(message_warn(407, err, message))
+
 # -----------------------------------------------------------------------------
 # Class: OutputRabbitmqMixin
 # -----------------------------------------------------------------------------
@@ -1704,6 +1709,7 @@ class OutputRabbitmqMixin():
 
     def send_to_failure_queue(self, message):
         try:
+            logging.debug(message_debug(909, threading.current_thread().name, self.rabbitmq_failure_queue, message))
             self.failure_channel.basic_publish(
                 exchange='',
                 routing_key=self.rabbitmq_failure_queue,
@@ -1719,6 +1725,7 @@ class OutputRabbitmqMixin():
 
     def send_to_info_queue(self, message):
         try:
+            logging.debug(message_debug(909, threading.current_thread().name, self.rabbitmq_info_queue, message))
             self.info_channel.basic_publish(
                 exchange='',
                 routing_key=self.rabbitmq_info_queue,
@@ -1730,7 +1737,6 @@ class OutputRabbitmqMixin():
             self.config['sent_to_info_queue'] += 1
         except BaseException as err:
             logging.warn(message_warning(411, err, message))
-        logging.debug(message_debug(910, message))
 
 # =============================================================================
 # Mixins: Queue*
@@ -1813,6 +1819,7 @@ class ProcessRedoQueueThread(threading.Thread):
 
         # Apply new configuration to g2_engine.
 
+        logging.debug(message_debug(908, threading.current_thread().name, default_config_id))
         self.g2_engine.reinitV2(default_config_id)
 
     def run(self):
@@ -1833,7 +1840,6 @@ class ProcessRedoQueueThread(threading.Thread):
 
             # Process record.
 
-            logging.debug(message_debug(903, threading.current_thread().name, redo_record))
             self.process_redo_record(redo_record)
 
         # Log message for thread exiting.
@@ -1873,6 +1879,7 @@ class QueueRedoRecordsThread(threading.Thread):
 
             try:
                 return_code = self.g2_engine.getRedoRecord(redo_record_bytearray)
+                logging.debug(message_debug(901, threading.current_thread().name, str(redo_record_bytearray)))
                 self.config['redo_records_from_senzing_engine'] += 1
             except G2Exception.G2ModuleNotInitialized as err:
                 exit_error(702, err, redo_record_bytearray.decode())
