@@ -762,7 +762,7 @@ message_dictionary = {
     "905": "Thread: {0} processing redo record: {1}",
     "906": "Thread: {0} re-processing redo record: {1}",
     "908": "Thread: {0} g2_engine.reinitV2({1})",
-    "909": "Thread: {0} Queue: {0} Message: {1}",
+    "909": "Thread: {0} Queue: {1} Message: {2}",
     "998": "Debugging enabled.",
     "999": "{0}",
 }
@@ -1112,7 +1112,6 @@ class MonitorThread(threading.Thread):
         self.config = config
         self.g2_engine = g2_engine
         self.workers = workers
-        # FIXME: self.last_daily = datetime.
 
     def run(self):
         '''Periodically monitor what is happening.'''
@@ -1879,8 +1878,6 @@ class QueueRedoRecordsThread(threading.Thread):
 
             try:
                 return_code = self.g2_engine.getRedoRecord(redo_record_bytearray)
-                logging.debug(message_debug(901, threading.current_thread().name, str(redo_record_bytearray)))
-                self.config['redo_records_from_senzing_engine'] += 1
             except G2Exception.G2ModuleNotInitialized as err:
                 exit_error(702, err, redo_record_bytearray.decode())
             except Exception as err:
@@ -1890,14 +1887,16 @@ class QueueRedoRecordsThread(threading.Thread):
 
             # If redo record was not received, sleep and try again.
 
-            redo_record = redo_record_bytearray.decode()
+            redo_record = str(redo_record_bytearray.decode())
             if not redo_record:
                 time.sleep(redo_sleep_time_in_seconds)
                 continue
 
             # Return generator value.
 
-            yield str(redo_record)
+            logging.debug(message_debug(901, threading.current_thread().name, redo_record))
+            self.config['redo_records_from_senzing_engine'] += 1
+            yield redo_record
 
     def run(self):
         '''Get redo records from Senzing.  Put redo records in internal queue.'''
@@ -1921,7 +1920,28 @@ class QueueRedoRecordsThread(threading.Thread):
 # =============================================================================
 
 
-class ProcessRedoQueueInternalThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteMixin, OutputInternalMixin):
+class ProcessReadFromKafkaThread(ProcessRedoQueueThread, InputKafkaMixin, ExecuteMixin, OutputInternalMixin):
+
+    def __init__(self, *args, **kwargs):
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
+
+
+class ProcessReadFromKafkaWithinfoThread(ProcessRedoQueueThread, InputKafkaMixin, ExecuteWithInfoMixin, OutputKafkaMixin):
+
+    def __init__(self, *args, **kwargs):
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
+
+
+class ProcessReadFromRabbitmqThread(ProcessRedoQueueThread, InputRabbitmqMixin, ExecuteMixin, OutputInternalMixin):
+
+    def __init__(self, *args, **kwargs):
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
+
+
+class ProcessReadFromRabbitmqWithinfoThread(ProcessRedoQueueThread, InputRabbitmqMixin, ExecuteWithInfoMixin, OutputRabbitmqMixin):
 
     def __init__(self, *args, **kwargs):
         for base in type(self).__bases__:
@@ -1935,28 +1955,21 @@ class ProcessRedoQueueInternalWithInfoThread(ProcessRedoQueueThread, InputIntern
             base.__init__(self, *args, **kwargs)
 
 
-class ProcessRedoQueueKafkaThread(ProcessRedoQueueThread, InputKafkaMixin, ExecuteMixin, OutputInternalMixin):
+class ProcessRedoThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteMixin, OutputInternalMixin):
 
     def __init__(self, *args, **kwargs):
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
 
-class ProcessRedoQueueKafkaWithInfoThread(ProcessRedoQueueThread, InputKafkaMixin, ExecuteWithInfoMixin, OutputKafkaMixin):
+class ProcessRedoWithinfoKafkaThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWithInfoMixin, OutputKafkaMixin):
 
     def __init__(self, *args, **kwargs):
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
 
-class ProcessRedoQueueRabbitmqThread(ProcessRedoQueueThread, InputRabbitmqMixin, ExecuteMixin, OutputInternalMixin):
-
-    def __init__(self, *args, **kwargs):
-        for base in type(self).__bases__:
-            base.__init__(self, *args, **kwargs)
-
-
-class ProcessRedoQueueRabbitmqWithInfoThread(ProcessRedoQueueThread, InputRabbitmqMixin, ExecuteWithInfoMixin, OutputRabbitmqMixin):
+class ProcessRedoWithinfoRabbitmqThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWithInfoMixin, OutputRabbitmqMixin):
 
     def __init__(self, *args, **kwargs):
         for base in type(self).__bases__:
@@ -1970,14 +1983,14 @@ class QueueRedoRecordsInternalThread(QueueRedoRecordsThread, QueueInternalMixin)
             base.__init__(self, *args, **kwargs)
 
 
-class QueueRedoRecordsRabbitmqThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWriteToRabbitmqMixin):
+class QueueRedoRecordsKafkaThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWriteToKafkaMixin):
 
     def __init__(self, *args, **kwargs):
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
 
-class QueueRedoRecordsKafkaThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWriteToKafkaMixin):
+class QueueRedoRecordsRabbitmqThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWriteToRabbitmqMixin):
 
     def __init__(self, *args, **kwargs):
         for base in type(self).__bases__:
@@ -2315,7 +2328,7 @@ def do_read_from_kafka(args):
     redo_processor(
         args=args,
         options_to_defaults_map=options_to_defaults_map,
-        process_thread=ProcessRedoQueueKafkaThread,
+        process_thread=ProcessReadFromKafkaThread,
         monitor_thread=MonitorThread
     )
 
@@ -2335,7 +2348,7 @@ def do_read_from_rabbitmq(args):
     redo_processor(
         args=args,
         options_to_defaults_map=options_to_defaults_map,
-        process_thread=ProcessRedoQueueRabbitmqThread,
+        process_thread=ProcessReadFromRabbitmqThread,
         monitor_thread=MonitorThread
     )
 
@@ -2355,7 +2368,7 @@ def do_read_from_kafka_withinfo(args):
     redo_processor(
         args=args,
         options_to_defaults_map=options_to_defaults_map,
-        process_thread=ProcessRedoQueueKafkaWithInfoThread,
+        process_thread=ProcessReadFromKafkaWithinfoThread,
         monitor_thread=MonitorThread
     )
 
@@ -2375,7 +2388,7 @@ def do_read_from_rabbitmq_withinfo(args):
     redo_processor(
         args=args,
         options_to_defaults_map=options_to_defaults_map,
-        process_thread=ProcessRedoQueueRabbitmqWithInfoThread,
+        process_thread=ProcessReadFromRabbitmqWithinfoThread,
         monitor_thread=MonitorThread
     )
 
@@ -2389,7 +2402,7 @@ def do_redo(args):
     redo_processor(
         args=args,
         read_thread=QueueRedoRecordsInternalThread,
-        process_thread=ProcessRedoQueueInternalThread,
+        process_thread=ProcessRedoThread,
         monitor_thread=MonitorThread
     )
 
@@ -2409,7 +2422,7 @@ def do_redo_withinfo_kafka(args):
         args=args,
         options_to_defaults_map=options_to_defaults_map,
         read_thread=QueueRedoRecordsInternalThread,
-        process_thread=ProcessRedoQueueKafkaWithInfoThread,
+        process_thread=ProcessRedoWithinfoKafkaThread,
         monitor_thread=MonitorThread
     )
 
@@ -2433,7 +2446,7 @@ def do_redo_withinfo_rabbitmq(args):
         args=args,
         options_to_defaults_map=options_to_defaults_map,
         read_thread=QueueRedoRecordsInternalThread,
-        process_thread=ProcessRedoQueueRabbitmqWithInfoThread,
+        process_thread=ProcessRedoWithinfoRabbitmqThread,
         monitor_thread=MonitorThread
     )
 
