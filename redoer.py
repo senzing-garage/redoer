@@ -1919,33 +1919,7 @@ class QueueRedoRecordsThread(threading.Thread):
 # Classes created with mixins
 # =============================================================================
 
-
-class ProcessReadFromKafkaThread(ProcessRedoQueueThread, InputKafkaMixin, ExecuteMixin, OutputInternalMixin):
-
-    def __init__(self, *args, **kwargs):
-        for base in type(self).__bases__:
-            base.__init__(self, *args, **kwargs)
-
-
-class ProcessReadFromKafkaWithinfoThread(ProcessRedoQueueThread, InputKafkaMixin, ExecuteWithInfoMixin, OutputKafkaMixin):
-
-    def __init__(self, *args, **kwargs):
-        for base in type(self).__bases__:
-            base.__init__(self, *args, **kwargs)
-
-
-class ProcessReadFromRabbitmqThread(ProcessRedoQueueThread, InputRabbitmqMixin, ExecuteMixin, OutputInternalMixin):
-
-    def __init__(self, *args, **kwargs):
-        for base in type(self).__bases__:
-            base.__init__(self, *args, **kwargs)
-
-
-class ProcessReadFromRabbitmqWithinfoThread(ProcessRedoQueueThread, InputRabbitmqMixin, ExecuteWithInfoMixin, OutputRabbitmqMixin):
-
-    def __init__(self, *args, **kwargs):
-        for base in type(self).__bases__:
-            base.__init__(self, *args, **kwargs)
+# ---- No external queue ------------------------------------------------------
 
 
 class ProcessRedoQueueInternalWithInfoThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWithInfoMixin, OutputInternalMixin):
@@ -1962,6 +1936,29 @@ class ProcessRedoThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteMixin
             base.__init__(self, *args, **kwargs)
 
 
+class QueueRedoRecordsInternalThread(QueueRedoRecordsThread, QueueInternalMixin):
+
+    def __init__(self, *args, **kwargs):
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
+
+# ---- Kafka related ----------------------------------------------------------
+
+
+class ProcessReadFromKafkaThread(ProcessRedoQueueThread, InputKafkaMixin, ExecuteMixin, OutputInternalMixin):
+
+    def __init__(self, *args, **kwargs):
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
+
+
+class ProcessReadFromKafkaWithinfoThread(ProcessRedoQueueThread, InputKafkaMixin, ExecuteWithInfoMixin, OutputKafkaMixin):
+
+    def __init__(self, *args, **kwargs):
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
+
+
 class ProcessRedoWithinfoKafkaThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWithInfoMixin, OutputKafkaMixin):
 
     def __init__(self, *args, **kwargs):
@@ -1969,21 +1966,30 @@ class ProcessRedoWithinfoKafkaThread(ProcessRedoQueueThread, InputInternalMixin,
             base.__init__(self, *args, **kwargs)
 
 
-class ProcessRedoWithinfoRabbitmqThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWithInfoMixin, OutputRabbitmqMixin):
-
-    def __init__(self, *args, **kwargs):
-        for base in type(self).__bases__:
-            base.__init__(self, *args, **kwargs)
-
-
-class QueueRedoRecordsInternalThread(QueueRedoRecordsThread, QueueInternalMixin):
-
-    def __init__(self, *args, **kwargs):
-        for base in type(self).__bases__:
-            base.__init__(self, *args, **kwargs)
-
-
 class QueueRedoRecordsKafkaThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWriteToKafkaMixin):
+
+    def __init__(self, *args, **kwargs):
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
+
+# ---- RabbitMQ related -------------------------------------------------------
+
+
+class ProcessReadFromRabbitmqThread(ProcessRedoQueueThread, InputRabbitmqMixin, ExecuteMixin, OutputInternalMixin):
+
+    def __init__(self, *args, **kwargs):
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
+
+
+class ProcessReadFromRabbitmqWithinfoThread(ProcessRedoQueueThread, InputRabbitmqMixin, ExecuteWithInfoMixin, OutputRabbitmqMixin):
+
+    def __init__(self, *args, **kwargs):
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
+
+
+class ProcessRedoWithinfoRabbitmqThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWithInfoMixin, OutputRabbitmqMixin):
 
     def __init__(self, *args, **kwargs):
         for base in type(self).__bases__:
