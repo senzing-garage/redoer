@@ -1285,14 +1285,16 @@ class InputKafkaMixin():
 
             # Construct and verify Kafka message.
 
-            message = str(kafka_message.value().decode().strip())
+            logging.debug(message_debug(999, "type: {0}, message: {1}".format(type(kafka_message.value()), kafka_message.value())))
+
+            message = str(kafka_message.value().decode()).strip()
             if not message:
                 continue
             self.config['received_from_redo_queue'] += 1
 
             # As a generator, give the value to the co-routine.
 
-#             logging.debug(message_debug(903, threading.current_thread().name, message))
+            logging.debug(message_debug(903, threading.current_thread().name, message))
             assert type(message) == str
             yield message
 
@@ -1444,7 +1446,6 @@ class ExecuteWithInfoMixin():
         # Transform redo_record string to bytearray.
 
         assert type(redo_record) == str
-        redo_record_bytearray = bytearray(redo_record.encode())
 
         # Additional parameters for processWithInfo().
 
@@ -1452,7 +1453,7 @@ class ExecuteWithInfoMixin():
 
         try:
             logging.debug(message_debug(905, threading.current_thread().name, redo_record))
-            return_code = self.g2_engine.processWithInfo(redo_record_bytearray, info_bytearray, self.g2_engine_flags)
+            return_code = self.g2_engine.processWithInfo(redo_record, info_bytearray, self.g2_engine_flags)
             if return_code != 0:
                 logging.warning(message_warning(302, return_code, redo_record))
             self.config['processed_redo_records'] += 1
@@ -1463,7 +1464,7 @@ class ExecuteWithInfoMixin():
             if self.is_g2_default_configuration_changed():
                 self.update_active_g2_configuration()
                 logging.debug(message_debug(906, threading.current_thread().name, redo_record))
-                return_code = self.g2_engine.processWithInfo(redo_record_bytearray, info_bytearray, self.g2_engine_flags)
+                return_code = self.g2_engine.processWithInfo(redo_record, info_bytearray, self.g2_engine_flags)
                 if return_code != 0:
                     logging.warning(message_warning(302, return_code, redo_record))
                 self.config['processed_redo_records'] += 1
