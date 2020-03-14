@@ -41,7 +41,7 @@ except ImportError:
 __all__ = []
 __version__ = "1.1.0"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2020-03-13'
+__updated__ = '2020-03-14'
 
 # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 SENZING_PRODUCT_ID = "5010"
@@ -377,7 +377,7 @@ def get_parser():
             },
         },
         'read-from-kafka-withinfo': {
-            "help": 'Read Senzing redo records from Kafka and send to G2Engine.processRedoRecordWithInfo()',
+            "help": 'Read Senzing redo records from Kafka and send to G2Engine.processWithInfo()',
             "arguments": {
                 "--engine-configuration-json": {
                     "dest": "engine_configuration_json",
@@ -417,7 +417,7 @@ def get_parser():
             },
         },
         'read-from-rabbitmq-withinfo': {
-            "help": 'Read Senzing redo records from RabbitMQ and send to G2Engine.processRedoRecordWithInfo()',
+            "help": 'Read Senzing redo records from RabbitMQ and send to G2Engine.processWithInfo()',
             "arguments": {
                 "--engine-configuration-json": {
                     "dest": "engine_configuration_json",
@@ -457,7 +457,7 @@ def get_parser():
             },
         },
         'redo-withinfo-kafka': {
-            "help": 'Read Senzing redo records from Senzing SDK, send to G2Engine.processRedoRecordWithInfo(), results sent to Kafka.',
+            "help": 'Read Senzing redo records from Senzing SDK, send to G2Engine.processWithInfo(), results sent to Kafka.',
             "arguments": {
                 "--engine-configuration-json": {
                     "dest": "engine_configuration_json",
@@ -497,7 +497,7 @@ def get_parser():
             },
         },
         'redo-withinfo-rabbitmq': {
-            "help": 'Read Senzing redo records from Senzing SDK, send to G2Engine.processRedoRecordWithInfo(), results sent to RabbitMQ.',
+            "help": 'Read Senzing redo records from Senzing SDK, send to G2Engine.processWithInfo(), results sent to RabbitMQ.',
             "arguments": {
                 "--engine-configuration-json": {
                     "dest": "engine_configuration_json",
@@ -715,7 +715,7 @@ message_dictionary = {
     "299": "{0}",
     "300": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}W",
     "301": "g2_engine.process() return_code: {0} redo_record: {1}",
-    "302": "g2_engine.processRedoRecordWithInfo() return_code: {0} redo_record: {1}",
+    "302": "g2_engine.processWithInfo() return_code: {0} redo_record: {1}",
     "404": "Buffer error: {0} for {1}.",
     "405": "Kafka error: {0} for {1}.",
     "406": "Not implemented error: {0} for {1}.",
@@ -1285,7 +1285,7 @@ class InputKafkaMixin():
 
             # Construct and verify Kafka message.
 
-            message = kafka_message.value().strip()
+            message = str(kafka_message.value().strip())
             if not message:
                 continue
             self.config['received_from_redo_queue'] += 1
@@ -1379,7 +1379,7 @@ class InputRabbitmqMixin():
 #   - process_redo_record(redo_record)
 #   Classes:
 #   - ExecuteMixin - calls g2_engine.process(...)
-#   - ExecuteWithInfoMixin - g2_engine.processRedoRecordWithInfo(...)
+#   - ExecuteWithInfoMixin - g2_engine.processWithInfo(...)
 #   - ExecuteWriteToRabbitmqMixin - Sends redo record to RabbitMQ
 #   - ExecuteWriteToKafkaMixin - Sends redo record to Kafka
 # =============================================================================
@@ -1404,11 +1404,10 @@ class ExecuteMixin():
         # Transform redo_record string to bytearray.
 
         assert type(redo_record) == str
-        redo_record_bytearray = bytearray(redo_record.encode())
 
         try:
             logging.debug(message_debug(905, threading.current_thread().name, redo_record))
-            return_code = self.g2_engine.process(redo_record_bytearray)
+            return_code = self.g2_engine.process(redo_record)
             if return_code != 0:
                 logging.warning(message_warning(301, return_code, redo_record))
             self.config['processed_redo_records'] += 1
@@ -1418,7 +1417,7 @@ class ExecuteMixin():
             if self.is_g2_default_configuration_changed():
                 self.update_active_g2_configuration()
                 logging.debug(message_debug(906, threading.current_thread().name, redo_record))
-                return_code = self.g2_engine.process(redo_record_bytearray)
+                return_code = self.g2_engine.process(redo_record)
                 if return_code != 0:
                     logging.warning(message_warning(301, return_code, redo_record))
                 self.config['processed_redo_records'] += 1
@@ -1439,7 +1438,7 @@ class ExecuteWithInfoMixin():
     def process_redo_record(self, redo_record=None):
         '''
         Process a single Senzing redo record.
-        This method uses G2Engine.processRedoRecordWithInfo()
+        This method uses G2Engine.processWithInfo()
         '''
 
         # Transform redo_record string to bytearray.
@@ -1447,13 +1446,13 @@ class ExecuteWithInfoMixin():
         assert type(redo_record) == str
         redo_record_bytearray = bytearray(redo_record.encode())
 
-        # Additional parameters for processRedoRecordWithInfo().
+        # Additional parameters for processWithInfo().
 
         info_bytearray = bytearray()
 
         try:
             logging.debug(message_debug(905, threading.current_thread().name, redo_record))
-            return_code = self.g2_engine.processRedoRecordWithInfo(redo_record_bytearray, info_bytearray, self.g2_engine_flags)
+            return_code = self.g2_engine.processWithInfo(redo_record_bytearray, info_bytearray, self.g2_engine_flags)
             if return_code != 0:
                 logging.warning(message_warning(302, return_code, redo_record))
             self.config['processed_redo_records'] += 1
@@ -1464,7 +1463,7 @@ class ExecuteWithInfoMixin():
             if self.is_g2_default_configuration_changed():
                 self.update_active_g2_configuration()
                 logging.debug(message_debug(906, threading.current_thread().name, redo_record))
-                return_code = self.g2_engine.processRedoRecordWithInfo(redo_record_bytearray, info_bytearray)
+                return_code = self.g2_engine.processWithInfo(redo_record_bytearray, info_bytearray)
                 if return_code != 0:
                     logging.warning(message_warning(302, return_code, redo_record))
                 self.config['processed_redo_records'] += 1
@@ -1804,7 +1803,7 @@ class ProcessRedoQueueThread(threading.Thread):
         self.redo_queue = redo_queue
 
     def filter_info_message(self, message=None):
-        assert type(redo_record) == str
+        assert type(message) == str
         return self.info_filter.filter(message=message)
 
     def govern(self):
@@ -2383,7 +2382,7 @@ def do_read_from_rabbitmq(args):
 
 def do_read_from_kafka_withinfo(args):
     '''
-    Read Senzing redo records from Kafka and send to G2Engine.processRedoRecordWithInfo().
+    Read Senzing redo records from Kafka and send to G2Engine.processWithInfo().
     "withinfo" returned is sent to Kafka.
     '''
 
@@ -2403,7 +2402,7 @@ def do_read_from_kafka_withinfo(args):
 
 def do_read_from_rabbitmq_withinfo(args):
     '''
-    Read Senzing redo records from RabbitMQ and send to G2Engine.processRedoRecordWithInfo().
+    Read Senzing redo records from RabbitMQ and send to G2Engine.processWithInfo().
     "withinfo" returned is sent to RabbitMQ.
     '''
 
@@ -2437,7 +2436,7 @@ def do_redo(args):
 
 def do_redo_withinfo_kafka(args):
     '''
-    Read Senzing redo records from Senzing SDK and send to G2Engine.processRedoRecordWithInfo().
+    Read Senzing redo records from Senzing SDK and send to G2Engine.processWithInfo().
     No external queues are used.  "withinfo" returned is sent to kafka.
     '''
 
@@ -2457,7 +2456,7 @@ def do_redo_withinfo_kafka(args):
 
 def do_redo_withinfo_rabbitmq(args):
     '''
-    Read Senzing redo records from Senzing SDK and send to G2Engine.processRedoRecordWithInfo().
+    Read Senzing redo records from Senzing SDK and send to G2Engine.processWithInfo().
     No external queues are used.  "withinfo" returned is sent to RabbitMQ.
     '''
 
