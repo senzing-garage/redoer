@@ -1285,8 +1285,6 @@ class InputKafkaMixin():
 
             # Construct and verify Kafka message.
 
-            logging.debug(message_debug(999, "type: {0}, message: {1}".format(type(kafka_message.value()), kafka_message.value())))
-
             message = str(kafka_message.value().decode()).strip()
             if not message:
                 continue
