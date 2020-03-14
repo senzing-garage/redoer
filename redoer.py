@@ -1407,9 +1407,7 @@ class ExecuteMixin():
 
         try:
             logging.debug(message_debug(905, threading.current_thread().name, redo_record))
-            return_code = self.g2_engine.process(redo_record)
-            if return_code != 0:
-                logging.warning(message_warning(301, return_code, redo_record))
+            self.g2_engine.process(redo_record)
             self.config['processed_redo_records'] += 1
         except G2Exception.G2ModuleNotInitialized as err:
             exit_error(707, err, redo_record)
@@ -1417,9 +1415,7 @@ class ExecuteMixin():
             if self.is_g2_default_configuration_changed():
                 self.update_active_g2_configuration()
                 logging.debug(message_debug(906, threading.current_thread().name, redo_record))
-                return_code = self.g2_engine.process(redo_record)
-                if return_code != 0:
-                    logging.warning(message_warning(301, return_code, redo_record))
+                self.g2_engine.process(redo_record)
                 self.config['processed_redo_records'] += 1
             else:
                 exit_error(709, err)
@@ -1451,9 +1447,7 @@ class ExecuteWithInfoMixin():
 
         try:
             logging.debug(message_debug(905, threading.current_thread().name, redo_record))
-            return_code = self.g2_engine.processWithInfo(redo_record, info_bytearray, self.g2_engine_flags)
-            if return_code != 0:
-                logging.warning(message_warning(302, return_code, redo_record))
+            self.g2_engine.processWithInfo(redo_record, info_bytearray, self.g2_engine_flags)
             self.config['processed_redo_records'] += 1
         except G2Exception.G2ModuleNotInitialized as err:
             self.send_to_failure_queue(redo_record)
@@ -1462,9 +1456,7 @@ class ExecuteWithInfoMixin():
             if self.is_g2_default_configuration_changed():
                 self.update_active_g2_configuration()
                 logging.debug(message_debug(906, threading.current_thread().name, redo_record))
-                return_code = self.g2_engine.processWithInfo(redo_record, info_bytearray, self.g2_engine_flags)
-                if return_code != 0:
-                    logging.warning(message_warning(302, return_code, redo_record))
+                self.g2_engine.processWithInfo(redo_record, info_bytearray, self.g2_engine_flags)
                 self.config['processed_redo_records'] += 1
             else:
                 self.send_to_failure_queue(redo_record)
