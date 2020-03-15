@@ -723,7 +723,7 @@ message_dictionary = {
     "408": "Kafka topic: {0}; message: {1}; error: {2}; error: {3}",
     "410": "RabbitMQ queue: {0} Unknown RabbitMQ error when connecting: {1}.",
     "411": "RabbitMQ queue: {0} Unknown RabbitMQ error: {1} Message: {2}",
-    "412": "RabbitMQ queue: {0} Could not connect to RabbitMQ host at {1}. The host name maybe wrong, it may not be ready, or your credentials are incorrect. See the RabbitMQ log for more details.",
+    "412": "RabbitMQ queue: {0} AMQPConnectionError: {1} Could not connect to RabbitMQ host at {2}. The host name maybe wrong, it may not be ready, or your credentials are incorrect. See the RabbitMQ log for more details.",
     "499": "{0}",
     "500": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}E",
     "695": "Unknown database scheme '{0}' in database url '{1}'",
@@ -1498,9 +1498,9 @@ class ExecuteWriteToRabbitmqMixin():
             self.info_channel = connection.channel()
             self.info_channel.queue_declare(queue=self.rabbitmq_queue)
         except (pika.exceptions.AMQPConnectionError) as err:
-            exit_error(412, "redo", err, rabbitmq_host)
+            exit_error(412, self.rabbitmq_queue, err, rabbitmq_host)
         except BaseException as err:
-            exit_error(410, "redo", err)
+            exit_error(410, self.rabbitmq_queue, err)
 
     def process_redo_record(self, redo_record=None):
         '''
@@ -1522,7 +1522,7 @@ class ExecuteWriteToRabbitmqMixin():
             )
             self.config['sent_to_redo_queue'] += 1
         except BaseException as err:
-            logging.warn(message_warning(411, "redo", err, redo_record))
+            logging.warning(message_warning(411, self.rabbitmq_queue, err, redo_record))
 
 # -----------------------------------------------------------------------------
 # Class: ExecuteWriteToKafkaMixin
@@ -1564,13 +1564,13 @@ class ExecuteWriteToKafkaMixin():
             self.kafka_producer.produce(self.kafka_redo_topic, redo_record, on_delivery=self.on_kafka_delivery)
             self.config['sent_to_redo_queue'] += 1
         except BufferError as err:
-            logging.warning(message_warn(404,  "redo",  err, redo_record))
+            logging.warning(message_warn(404, self.kafka_redo_topic, err, redo_record))
         except confluent_kafka.KafkaException as err:
-            logging.warning(message_warn(405,  "redo",  err, redo_record))
+            logging.warning(message_warn(405, self.kafka_redo_topic, err, redo_record))
         except NotImplemented as err:
-            logging.warning(message_warn(406,  "redo",  err, redo_record))
+            logging.warning(message_warn(406, self.kafka_redo_topic, err, redo_record))
         except:
-            logging.warning(message_warn(407,  "redo",  err, redo_record))
+            logging.warning(message_warn(407, self.kafka_redo_topic, err, redo_record))
 
 # =============================================================================
 # Mixins: Output*
@@ -1645,13 +1645,13 @@ class OutputKafkaMixin():
             self.kafka_failure_producer.produce(self.kafka_failure_topic, message, on_delivery=self.on_kafka_delivery)
             self.config['sent_to_failure_queue'] += 1
         except BufferError as err:
-            logging.warning(message_warn(404, "failure", err, message))
+            logging.warning(message_warn(404, self.kafka_failure_topic, err, message))
         except confluent_kafka.KafkaException as err:
-            logging.warning(message_warn(405, "failure",  err, message))
+            logging.warning(message_warn(405, self.kafka_failure_topic, err, message))
         except NotImplemented as err:
-            logging.warning(message_warn(406, "failure",  err, message))
+            logging.warning(message_warn(406, self.kafka_failure_topic, err, message))
         except:
-            logging.warning(message_warn(407, "failure",  err, message))
+            logging.warning(message_warn(407, self.kafka_failure_topic, err, message))
 
     def send_to_info_queue(self, message):
         assert type(message) == str
@@ -1660,13 +1660,13 @@ class OutputKafkaMixin():
             self.kafka_info_producer.produce(self.kafka_info_topic, message, on_delivery=self.on_kafka_delivery)
             self.config['sent_to_info_queue'] += 1
         except BufferError as err:
-            logging.warning(message_warn(404, "info",  err, message))
+            logging.warning(message_warn(404, self.kafka_info_topic, err, message))
         except confluent_kafka.KafkaException as err:
-            logging.warning(message_warn(405, "info",  err, message))
+            logging.warning(message_warn(405, self.kafka_info_topic, err, message))
         except NotImplemented as err:
-            logging.warning(message_warn(406, "info",  err, message))
+            logging.warning(message_warn(406, self.kafka_info_topic, err, message))
         except:
-            logging.warning(message_warn(407, "info",  err, message))
+            logging.warning(message_warn(407, self.kafka_info_topic, err, message))
 
 # -----------------------------------------------------------------------------
 # Class: OutputRabbitmqMixin
@@ -1697,9 +1697,9 @@ class OutputRabbitmqMixin():
             self.failure_channel = connection.channel()
             self.failure_channel.queue_declare(queue=self.rabbitmq_failure_queue)
         except (pika.exceptions.AMQPConnectionError) as err:
-            exit_error(412, "failure", err, rabbitmq_failure_host)
+            exit_error(412, self.rabbitmq_failure_queue, err, rabbitmq_failure_host)
         except BaseException as err:
-            exit_error(410, "failure", err)
+            exit_error(410, self.rabbitmq_failure_queue, err)
 
         # Connect to the RabbitMQ host for info_channel.
 
@@ -1709,9 +1709,9 @@ class OutputRabbitmqMixin():
             self.info_channel = connection.channel()
             self.info_channel.queue_declare(queue=self.rabbitmq_info_queue)
         except (pika.exceptions.AMQPConnectionError) as err:
-            exit_error(412, "info", err, rabbitmq_info_host)
+            exit_error(412, self.rabbitmq_info_queue, err, rabbitmq_info_host)
         except BaseException as err:
-            exit_error(410, "info", err)
+            exit_error(410, self.rabbitmq_info_queue, err)
 
     def send_to_failure_queue(self, message):
         assert type(message) == str
@@ -1727,7 +1727,7 @@ class OutputRabbitmqMixin():
             )
             self.config['sent_to_failure_queue'] += 1
         except BaseException as err:
-            logging.warn(message_warning(411, "failure", err, message))
+            logging.warning(message_warning(411, self.rabbitmq_failure_queue, err, message))
         logging.info(message_info(121, message))
 
     def send_to_info_queue(self, message):
@@ -1744,7 +1744,7 @@ class OutputRabbitmqMixin():
             )
             self.config['sent_to_info_queue'] += 1
         except BaseException as err:
-            logging.warn(message_warning(411, "info", err, message))
+            logging.warning(message_warning(411, self.rabbitmq_info_queue, err, message))
 
 # =============================================================================
 # Mixins: Queue*
