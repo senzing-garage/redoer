@@ -41,7 +41,7 @@ except ImportError:
 __all__ = []
 __version__ = "1.1.0"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2020-03-15'
+__updated__ = '2020-03-16'
 
 # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 SENZING_PRODUCT_ID = "5010"
@@ -1692,7 +1692,6 @@ class OutputRabbitmqMixin():
             except BaseException as err:
                 exit_error(410, rabbitmq_queue, err)
 
-
         def run(self):
             while True:
                 message = self.internal_queue.get()
@@ -1713,20 +1712,44 @@ class OutputRabbitmqMixin():
     def __init__(self, *args, **kwargs):
         logging.info(message_info(132, "OutputRabbitmqMixin"))
 
-        # Pull values from configuration.
-
-        rabbitmq_failure_host = self.config.get("rabbitmq_failure_host")
-        self.rabbitmq_failure_queue = self.config.get("rabbitmq_failure_queue")
-        rabbitmq_failure_username = self.config.get("rabbitmq_failure_username")
-        rabbitmq_failure_password = self.config.get("rabbitmq_failure_password")
-
-        rabbitmq_info_host = self.config.get("rabbitmq_info_host")
-        self.rabbitmq_info_queue = self.config.get("rabbitmq_info_queue")
-        rabbitmq_info_username = self.config.get("rabbitmq_info_username")
-        rabbitmq_info_password = self.config.get("rabbitmq_info_password")
-
         self.failure_queue = multiprocessing.Queue()
         self.info_queue = multiprocessing.Queue()
+
+        threads = []
+
+        # Create thread for info queue.
+
+        info_thread = RabbitmqPublishThread(
+            self.rabbitmq_info_queue,
+            self.config.get("rabbitmq_info_host"),
+            self.config.get("rabbitmq_info_queue"),
+            self.config.get("rabbitmq_info_username"),
+            self.config.get("rabbitmq_info_password")
+        )
+        info_thread.name = "{0}-{1}".format(self.name, "info")
+        threads.append(info_thread)
+
+        # Create thread for failure queue.
+
+        failure_thread = RabbitmqPublishThread(
+            self.rabbitmq_failure_queue,
+            self.config.get("rabbitmq_failure_host"),
+            self.config.get("rabbitmq_failure_queue"),
+            self.config.get("rabbitmq_failure_username"),
+            self.config.get("rabbitmq_failure_password")
+        )
+        failure_thread.name = "{0}-{1}".format(self.name, "failure")
+        threads.append(failure_thread)
+
+        # Start threads.
+
+        for thread in threads:
+            thread.start()
+
+        # Collect inactive threads from master process.
+
+        for thread in threads:
+            thread.join()
 
         # TODO:  Spin up 2 RabbitMQ publisher threads
 
