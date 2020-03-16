@@ -762,7 +762,8 @@ message_dictionary = {
     "905": "Thread: {0} processing redo record: {1}",
     "906": "Thread: {0} re-processing redo record: {1}",
     "908": "Thread: {0} g2_engine.reinitV2({1})",
-    "909": "Thread: {0} Queue: {1} Message: {2}",
+    "909": "Thread: {0} Queue: {1} Publish Message: {2}",
+    "910": "Thread: {0} Queue: {1} Subscribe Message: {2}",
     "998": "Debugging enabled.",
     "999": "{0}",
 }
@@ -1101,6 +1102,80 @@ class InfoFilter:
         return message
 
 # -----------------------------------------------------------------------------
+# RabbitMQ publish and subscribe threads
+# -----------------------------------------------------------------------------
+
+
+class RabbitmqPublishThread(threading.Thread):
+
+    def __init__(self, internal_queue, rabbitmq_host, rabbitmq_queue_name, rabbitmq_username, rabbitmq_password):
+        threading.Thread.__init__(self)
+        self.internal_queue = internal_queue
+        self.rabbitmq_queue_name = rabbitmq_queue_name
+
+        try:
+            credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
+            connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host, credentials=credentials))
+            self.info_channel = connection.channel()
+            self.info_channel.queue_declare(queue=rabbitmq_queue_name)
+        except (pika.exceptions.AMQPConnectionError) as err:
+            exit_error(412, rabbitmq_queue_name, err, rabbitmq_host)
+        except BaseException as err:
+            exit_error(410, rabbitmq_queue_name, err)
+
+    def run(self):
+        while True:
+            message = self.internal_queue.get()
+            try:
+                logging.debug(message_debug(909, threading.current_thread().name, self.rabbitmq_queue_name, message))
+                self.failure_channel.basic_publish(
+                    exchange='',
+                    routing_key=self.rabbitmq_queue_name,
+                    body=message,
+                    properties=pika.BasicProperties(
+                        delivery_mode=1  # Make message non-persistent
+                    )
+                )
+            except BaseException as err:
+                logging.warning(message_warning(411, self.rabbitmq_queue_name, err, message))
+
+
+class RabbitmqSubscribeThread(threading.Thread):
+
+    def __init__(self, internal_queue, rabbitmq_host, rabbitmq_queue_name, rabbitmq_username, rabbitmq_password, rabbitmq_prefetch_count):
+        threading.Thread.__init__(self)
+        self.internal_queue = internal_queue
+        self.rabbitmq_queue_name = rabbitmq_queue_name
+
+        try:
+            credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
+            connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host, credentials=credentials))
+            self.channel = connection.channel()
+            self.channel.queue_declare(queue=rabbitmq_queue_name)
+            self.channel.basic_qos(prefetch_count=rabbitmq_prefetch_count)
+            self.channel.basic_consume(on_message_callback=self.callback, queue=rabbitmq_queue)
+        except pika.exceptions.AMQPConnectionError as err:
+            exit_error(562, err, rabbitmq_host)
+        except BaseException as err:
+            exit_error(561, err)
+
+    def callback(self, channel, method, header, body):
+        '''
+        Called by Pika whenever a message is received.
+        Read from RabbitMQ and put into an internal queue.
+        '''
+        message = body.decode()
+        logging.debug(message_debug(910, threading.current_thread().name, self.rabbitmq_queue_name, message))
+        self.internal_queue.put(message)
+        channel.basic_ack(delivery_tag=method.delivery_tag)
+
+    def run(self):
+        try:
+            self.channel.start_consuming()
+        except pika.exceptions.ChannelClosed:
+            logging.info(message_info(130, threading.current_thread().name))
+
+# -----------------------------------------------------------------------------
 # Class: MonitorThread
 # -----------------------------------------------------------------------------
 
@@ -1315,41 +1390,30 @@ class InputRabbitmqMixin():
     def __init__(self, *args, **kwargs):
         logging.info(message_info(132, "InputRabbitmqMixin"))
 
-        # Pull values from configuration.
-
-        rabbitmq_host = self.config.get("rabbitmq_redo_host")
-        rabbitmq_queue = self.config.get("rabbitmq_redo_queue")
-        rabbitmq_username = self.config.get("rabbitmq_redo_username")
-        rabbitmq_password = self.config.get("rabbitmq_redo_password")
-        rabbitmq_prefetch_count = self.config.get("rabbitmq_prefetch_count")
-
-        # A very small internal queue to transfer data from RabbitMQ callback() to generator.
-
         self.redo_queue = multiprocessing.Queue(2)
 
-        # Connect to the RabbitMQ host for failure_channel.
+        threads = []
 
-        try:
-            credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
-            connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host, credentials=credentials))
-            self.channel = connection.channel()
-            self.channel.queue_declare(queue=rabbitmq_queue)
-            self.channel.basic_qos(prefetch_count=rabbitmq_prefetch_count)
-            self.channel.basic_consume(on_message_callback=self.callback, queue=rabbitmq_queue)
-        except pika.exceptions.AMQPConnectionError as err:
-            exit_error(562, err, rabbitmq_host)
-        except BaseException as err:
-            exit_error(561, err)
+        # Create thread for redo queue.
 
-    def callback(self, channel, method, header, body):
-        '''
-        Called by Pika whenever a message is received.
-        Read from RabbitMQ and put into a very small internal queue.
-        '''
-        message = body.decode()
-        self.redo_queue.put(message)
-        self.config['received_from_redo_queue'] += 1
-        channel.basic_ack(delivery_tag=method.delivery_tag)
+        redo_thread = RabbitmqSubscribeThread(
+            self.redo_queue,
+            self.config.get("rabbitmq_redo_host"),
+            self.config.get("rabbitmq_redo_queue"),
+            self.config.get("rabbitmq_redo_username"),
+            self.config.get("rabbitmq_redo_password"),
+            self.config.get("rabbitmq_prefetch_count")
+        )
+
+        # Start threads.
+
+        for thread in threads:
+            thread.start()
+
+        # Collect inactive threads.
+
+        for thread in threads:
+            thread.join()
 
     def redo_records(self):
         '''
@@ -1358,19 +1422,11 @@ class InputRabbitmqMixin():
         populated by the RabbitMQ callback() method.
         '''
 
-        # Start consuming.
-
-        try:
-            self.channel.start_consuming()
-        except pika.exceptions.ChannelClosed:
-            logging.info(message_info(130, threading.current_thread().name))
-
-        # Return value from very small internal queue.
-
         while True:
             message = str(self.redo_queue.get())
-            logging.debug(message_debug(903, threading.current_thread().name, message))
             assert type(message) == str
+            self.config['received_from_redo_queue'] += 1
+            logging.debug(message_debug(903, threading.current_thread().name, message))
             yield message
 
 # =============================================================================
@@ -1483,24 +1539,31 @@ class ExecuteWriteToRabbitmqMixin():
     def __init__(self, *args, **kwargs):
         logging.info(message_info(132, "ExecuteWriteToRabbitmqMixin"))
 
-        # Pull values from configuration.
+        self.redo_queue = multiprocessing.Queue()
 
-        rabbitmq_host = self.config.get("rabbitmq_redo_host")
-        self.rabbitmq_queue = self.config.get("rabbitmq_redo_queue")
-        rabbitmq_username = self.config.get("rabbitmq_redo_username")
-        rabbitmq_password = self.config.get("rabbitmq_redo_password")
+        threads = []
 
-        # Connect to the RabbitMQ host for info_channel.
+        # Create thread for redo queue.
 
-        try:
-            credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
-            connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host, credentials=credentials))
-            self.info_channel = connection.channel()
-            self.info_channel.queue_declare(queue=self.rabbitmq_queue)
-        except (pika.exceptions.AMQPConnectionError) as err:
-            exit_error(412, self.rabbitmq_queue, err, rabbitmq_host)
-        except BaseException as err:
-            exit_error(410, self.rabbitmq_queue, err)
+        redo_thread = RabbitmqPublishThread(
+            self.redo_queue,
+            self.config.get("rabbitmq_redo_host"),
+            self.config.get("rabbitmq_redo_queue"),
+            self.config.get("rabbitmq_redo_username"),
+            self.config.get("rabbitmq_redo_password")
+        )
+        redo_thread.name = "{0}-{1}".format(self.name, "redo")
+        threads.append(redo_thread)
+
+        # Start threads.
+
+        for thread in threads:
+            thread.start()
+
+        # Collect inactive threads from master process.
+
+        for thread in threads:
+            thread.join()
 
     def process_redo_record(self, redo_record=None):
         '''
@@ -1509,20 +1572,8 @@ class ExecuteWriteToRabbitmqMixin():
         '''
 
         assert type(redo_record) == str
-
-        try:
-            logging.debug(message_debug(909, threading.current_thread().name, self.rabbitmq_queue, redo_record))
-            self.info_channel.basic_publish(
-                exchange='',
-                routing_key=self.rabbitmq_queue,
-                body=redo_record,
-                properties=pika.BasicProperties(
-                    delivery_mode=1  # Make message non-persistent
-                )
-            )
-            self.config['sent_to_redo_queue'] += 1
-        except BaseException as err:
-            logging.warning(message_warning(411, self.rabbitmq_queue, err, redo_record))
+        self.redo_queue.put(redo_record)
+        self.config['sent_to_redo_queue'] += 1
 
 # -----------------------------------------------------------------------------
 # Class: ExecuteWriteToKafkaMixin
@@ -1675,40 +1726,6 @@ class OutputKafkaMixin():
 
 class OutputRabbitmqMixin():
 
-    class RabbitmqPublishThread(threading.Thread):
-
-        def __init__(self, internal_queue, rabbitmq_host, rabbitmq_queue, rabbitmq_username, rabbitmq_password):
-            threading.Thread.__init__(self)
-            self.internal_queue = internal_queue
-            self.rabbitmq_queue = rabbitmq_queue
-
-            try:
-                credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
-                connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host, credentials=credentials))
-                self.info_channel = connection.channel()
-                self.info_channel.queue_declare(queue=rabbitmq_queue)
-            except (pika.exceptions.AMQPConnectionError) as err:
-                exit_error(412, rabbitmq_queue, err, rabbitmq_host)
-            except BaseException as err:
-                exit_error(410, rabbitmq_queue, err)
-
-        def run(self):
-            while True:
-                message = self.internal_queue.get()
-                try:
-                    logging.debug(message_debug(909, threading.current_thread().name, self.rabbitmq_queue, message))
-                    self.failure_channel.basic_publish(
-                        exchange='',
-                        routing_key=self.rabbitmq_queue,
-                        body=message,
-                        properties=pika.BasicProperties(
-                            delivery_mode=1  # Make message non-persistent
-                        )
-                    )
-                except BaseException as err:
-                    logging.warning(message_warning(411, self.rabbitmq_queue, err, message))
-                logging.info(message_info(121, message))
-
     def __init__(self, *args, **kwargs):
         logging.info(message_info(132, "OutputRabbitmqMixin"))
 
@@ -1720,7 +1737,7 @@ class OutputRabbitmqMixin():
         # Create thread for info queue.
 
         info_thread = RabbitmqPublishThread(
-            self.rabbitmq_info_queue,
+            self.info_queue,
             self.config.get("rabbitmq_info_host"),
             self.config.get("rabbitmq_info_queue"),
             self.config.get("rabbitmq_info_username"),
@@ -1732,7 +1749,7 @@ class OutputRabbitmqMixin():
         # Create thread for failure queue.
 
         failure_thread = RabbitmqPublishThread(
-            self.rabbitmq_failure_queue,
+            self.failure_queue,
             self.config.get("rabbitmq_failure_host"),
             self.config.get("rabbitmq_failure_queue"),
             self.config.get("rabbitmq_failure_username"),
@@ -1751,15 +1768,15 @@ class OutputRabbitmqMixin():
         for thread in threads:
             thread.join()
 
-        # TODO:  Spin up 2 RabbitMQ publisher threads
-
     def send_to_failure_queue(self, message):
         assert type(message) == str
         self.failure_queue.put(message)
+        self.config['sent_to_failure_queue'] += 1
 
     def send_to_info_queue(self, message):
         assert type(message) == str
         self.info_queue.put(message)
+        self.config['sent_to_info_queue'] += 1
 
 # =============================================================================
 # Mixins: Queue*
