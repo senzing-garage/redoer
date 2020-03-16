@@ -41,7 +41,7 @@ except ImportError:
 __all__ = []
 __version__ = "1.1.0"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2020-03-14'
+__updated__ = '2020-03-15'
 
 # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 SENZING_PRODUCT_ID = "5010"
@@ -1675,6 +1675,41 @@ class OutputKafkaMixin():
 
 class OutputRabbitmqMixin():
 
+    class RabbitmqPublishThread(threading.Thread):
+
+        def __init__(self, internal_queue, rabbitmq_host, rabbitmq_queue, rabbitmq_username, rabbitmq_password):
+            threading.Thread.__init__(self)
+            self.internal_queue = internal_queue
+            self.rabbitmq_queue = rabbitmq_queue
+
+            try:
+                credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
+                connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host, credentials=credentials))
+                self.info_channel = connection.channel()
+                self.info_channel.queue_declare(queue=rabbitmq_queue)
+            except (pika.exceptions.AMQPConnectionError) as err:
+                exit_error(412, rabbitmq_queue, err, rabbitmq_host)
+            except BaseException as err:
+                exit_error(410, rabbitmq_queue, err)
+
+
+        def run(self):
+            while True:
+                message = self.internal_queue.get()
+                try:
+                    logging.debug(message_debug(909, threading.current_thread().name, self.rabbitmq_queue, message))
+                    self.failure_channel.basic_publish(
+                        exchange='',
+                        routing_key=self.rabbitmq_queue,
+                        body=message,
+                        properties=pika.BasicProperties(
+                            delivery_mode=1  # Make message non-persistent
+                        )
+                    )
+                except BaseException as err:
+                    logging.warning(message_warning(411, self.rabbitmq_queue, err, message))
+                logging.info(message_info(121, message))
+
     def __init__(self, *args, **kwargs):
         logging.info(message_info(132, "OutputRabbitmqMixin"))
 
@@ -1684,67 +1719,24 @@ class OutputRabbitmqMixin():
         self.rabbitmq_failure_queue = self.config.get("rabbitmq_failure_queue")
         rabbitmq_failure_username = self.config.get("rabbitmq_failure_username")
         rabbitmq_failure_password = self.config.get("rabbitmq_failure_password")
+
         rabbitmq_info_host = self.config.get("rabbitmq_info_host")
         self.rabbitmq_info_queue = self.config.get("rabbitmq_info_queue")
         rabbitmq_info_username = self.config.get("rabbitmq_info_username")
         rabbitmq_info_password = self.config.get("rabbitmq_info_password")
 
-        # Connect to the RabbitMQ host for failure_channel.
+        self.failure_queue = multiprocessing.Queue()
+        self.info_queue = multiprocessing.Queue()
 
-        try:
-            credentials = pika.PlainCredentials(rabbitmq_failure_username, rabbitmq_failure_password)
-            connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_failure_host, credentials=credentials))
-            self.failure_channel = connection.channel()
-            self.failure_channel.queue_declare(queue=self.rabbitmq_failure_queue)
-        except (pika.exceptions.AMQPConnectionError) as err:
-            exit_error(412, self.rabbitmq_failure_queue, err, rabbitmq_failure_host)
-        except BaseException as err:
-            exit_error(410, self.rabbitmq_failure_queue, err)
-
-        # Connect to the RabbitMQ host for info_channel.
-
-        try:
-            credentials = pika.PlainCredentials(rabbitmq_info_username, rabbitmq_info_password)
-            connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_info_host, credentials=credentials))
-            self.info_channel = connection.channel()
-            self.info_channel.queue_declare(queue=self.rabbitmq_info_queue)
-        except (pika.exceptions.AMQPConnectionError) as err:
-            exit_error(412, self.rabbitmq_info_queue, err, rabbitmq_info_host)
-        except BaseException as err:
-            exit_error(410, self.rabbitmq_info_queue, err)
+        # TODO:  Spin up 2 RabbitMQ publisher threads
 
     def send_to_failure_queue(self, message):
         assert type(message) == str
-        try:
-            logging.debug(message_debug(909, threading.current_thread().name, self.rabbitmq_failure_queue, message))
-            self.failure_channel.basic_publish(
-                exchange='',
-                routing_key=self.rabbitmq_failure_queue,
-                body=message,
-                properties=pika.BasicProperties(
-                    delivery_mode=1  # Make message non-persistent
-                )
-            )
-            self.config['sent_to_failure_queue'] += 1
-        except BaseException as err:
-            logging.warning(message_warning(411, self.rabbitmq_failure_queue, err, message))
-        logging.info(message_info(121, message))
+        self.failure_queue.put(message)
 
     def send_to_info_queue(self, message):
         assert type(message) == str
-        try:
-            logging.debug(message_debug(909, threading.current_thread().name, self.rabbitmq_info_queue, message))
-            self.info_channel.basic_publish(
-                exchange='',
-                routing_key=self.rabbitmq_info_queue,
-                body=message,
-                properties=pika.BasicProperties(
-                    delivery_mode=1  # Make message non-persistent
-                )
-            )
-            self.config['sent_to_info_queue'] += 1
-        except BaseException as err:
-            logging.warning(message_warning(411, self.rabbitmq_info_queue, err, message))
+        self.info_queue.put(message)
 
 # =============================================================================
 # Mixins: Queue*
