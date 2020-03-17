@@ -1130,8 +1130,8 @@ class RabbitmqPublishThread(threading.Thread):
         try:
             credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
             connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host, credentials=credentials))
-            self.info_channel = connection.channel()
-            self.info_channel.queue_declare(queue=rabbitmq_queue_name)
+            self.channel = connection.channel()
+            self.channel.queue_declare(queue=rabbitmq_queue_name)
         except (pika.exceptions.AMQPConnectionError) as err:
             exit_error(412, rabbitmq_queue_name, err, rabbitmq_host)
         except BaseException as err:
@@ -1142,7 +1142,7 @@ class RabbitmqPublishThread(threading.Thread):
             message = self.internal_queue.get()
             try:
                 logging.debug(message_debug(909, threading.current_thread().name, self.rabbitmq_queue_name, message))
-                self.failure_channel.basic_publish(
+                self.channel.basic_publish(
                     exchange='',
                     routing_key=self.rabbitmq_queue_name,
                     body=message,
