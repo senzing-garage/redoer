@@ -693,7 +693,6 @@ message_dictionary = {
     "129": "{0} is running.",
     "130": "{0} has exited.",
     "131": "Adding redo record to redo queue: {0}",
-    "132": "Using Mixin: {0}",
     "160": "{0} LICENSE {0}",
     "161": "          Version: {0} ({1})",
     "162": "         Customer: {0}",
@@ -768,6 +767,8 @@ message_dictionary = {
     "910": "Thread: {0} Queue: {1} Subscribe Message: {2}",
     "912": "RabbitmqSubscribeThread: {0} Host: {1} Queue-name: {2} Username: {3}  Prefetch-count: {4}",
     "913": "RabbitmqPublishThread: {0} Host: {1} Queue-name: {2} Username: {3}",
+    "996": "Using Mixin: {0}",
+    "997": "Using Thread: {0}",
     "998": "Debugging enabled.",
     "999": "{0}",
 }
@@ -1114,6 +1115,7 @@ class RabbitmqPublishThread(threading.Thread):
 
     def __init__(self, internal_queue, rabbitmq_host, rabbitmq_queue_name, rabbitmq_username, rabbitmq_password):
         threading.Thread.__init__(self)
+        logging.debug(message_debug(997, "RabbitmqPublishThread"))
         self.internal_queue = internal_queue
         self.rabbitmq_queue_name = rabbitmq_queue_name
 
@@ -1156,6 +1158,7 @@ class RabbitmqSubscribeThread(threading.Thread):
 
     def __init__(self, internal_queue, rabbitmq_host, rabbitmq_queue_name, rabbitmq_username, rabbitmq_password, rabbitmq_prefetch_count):
         threading.Thread.__init__(self)
+        logging.debug(message_debug(997, "RabbitmqSubscribeThread"))
 
         logging.debug(message_debug(912,
             threading.current_thread().name,
@@ -1175,7 +1178,7 @@ class RabbitmqSubscribeThread(threading.Thread):
             self.channel = connection.channel()
             self.channel.queue_declare(queue=rabbitmq_queue_name)
             self.channel.basic_qos(prefetch_count=rabbitmq_prefetch_count)
-            self.channel.basic_consume(on_message_callback=self.callback, queue=rabbitmq_queue)
+            self.channel.basic_consume(on_message_callback=self.callback, queue=rabbitmq_queue_name)
         except pika.exceptions.AMQPConnectionError as err:
             exit_error(562, err, rabbitmq_host)
         except BaseException as err:
@@ -1320,7 +1323,7 @@ class MonitorThread(threading.Thread):
 class InputInternalMixin():
 
     def __init__(self, *args, **kwargs):
-        logging.info(message_info(132, "InputInternalMixin"))
+        logging.debug(message_debug(996, "InputInternalMixin"))
 
     def redo_records(self):
         '''
@@ -1343,7 +1346,7 @@ class InputInternalMixin():
 class InputKafkaMixin():
 
     def __init__(self, *args, **kwargs):
-        logging.info(message_info(132, "InputKafkaMixin"))
+        logging.debug(message_debug(996, "InputKafkaMixin"))
 
         # Create Kafka client.
 
@@ -1410,16 +1413,16 @@ class InputKafkaMixin():
 class InputRabbitmqMixin():
 
     def __init__(self, *args, **kwargs):
-        logging.info(message_info(132, "InputRabbitmqMixin"))
+        logging.debug(message_debug(996, "InputRabbitmqMixin"))
 
-        self.redo_queue = multiprocessing.Queue(2)
+        self.input_rabbitmq_mixin_queue = multiprocessing.Queue(2)
 
         threads = []
 
         # Create thread for redo queue.
 
         redo_thread = RabbitmqSubscribeThread(
-            self.redo_queue,
+            self.input_rabbitmq_mixin_queue,
             self.config.get("rabbitmq_redo_host"),
             self.config.get("rabbitmq_redo_queue"),
             self.config.get("rabbitmq_redo_username"),
@@ -1432,11 +1435,6 @@ class InputRabbitmqMixin():
         for thread in threads:
             thread.start()
 
-        # Collect inactive threads.
-
-        for thread in threads:
-            thread.join()
-
     def redo_records(self):
         '''
         Generator that produces Senzing redo records.
@@ -1445,7 +1443,7 @@ class InputRabbitmqMixin():
         '''
 
         while True:
-            message = str(self.redo_queue.get())
+            message = str(self.input_rabbitmq_mixin_queue.get())
             assert type(message) == str
             self.config['received_from_redo_queue'] += 1
             logging.debug(message_debug(903, threading.current_thread().name, message))
@@ -1470,7 +1468,7 @@ class InputRabbitmqMixin():
 class ExecuteMixin():
 
     def __init__(self, *args, **kwargs):
-        logging.info(message_info(132, "ExecuteMixin"))
+        logging.debug(message_debug(996, "ExecuteMixin"))
 
     def process_redo_record(self, redo_record=None):
         '''
@@ -1479,12 +1477,10 @@ class ExecuteMixin():
         The method can be sub-classed to call other G2Engine methods.
         '''
 
-        # Transform redo_record string to bytearray.
-
+        logging.debug(message_debug(905, threading.current_thread().name, redo_record))
         assert type(redo_record) == str
 
         try:
-            logging.debug(message_debug(905, threading.current_thread().name, redo_record))
             self.g2_engine.process(redo_record)
             self.config['processed_redo_records'] += 1
         except G2Exception.G2ModuleNotInitialized as err:
@@ -1506,7 +1502,7 @@ class ExecuteMixin():
 class ExecuteWithInfoMixin():
 
     def __init__(self, *args, **kwargs):
-        logging.info(message_info(132, "ExecuteWithInfoMixin"))
+        logging.debug(message_debug(996, "ExecuteWithInfoMixin"))
         self.g2_engine_flags = 0
 
     def process_redo_record(self, redo_record=None):
@@ -1515,8 +1511,7 @@ class ExecuteWithInfoMixin():
         This method uses G2Engine.processWithInfo()
         '''
 
-        # Transform redo_record string to bytearray.
-
+        logging.debug(message_debug(905, threading.current_thread().name, redo_record))
         assert type(redo_record) == str
 
         # Additional parameters for processWithInfo().
@@ -1524,7 +1519,6 @@ class ExecuteWithInfoMixin():
         info_bytearray = bytearray()
 
         try:
-            logging.debug(message_debug(905, threading.current_thread().name, redo_record))
             self.g2_engine.processWithInfo(redo_record, info_bytearray, self.g2_engine_flags)
             self.config['processed_redo_records'] += 1
         except G2Exception.G2ModuleNotInitialized as err:
@@ -1559,16 +1553,16 @@ class ExecuteWithInfoMixin():
 class ExecuteWriteToRabbitmqMixin():
 
     def __init__(self, *args, **kwargs):
-        logging.info(message_info(132, "ExecuteWriteToRabbitmqMixin"))
+        logging.debug(message_debug(996, "ExecuteWriteToRabbitmqMixin"))
 
-        self.redo_queue = multiprocessing.Queue()
+        self.execute_write_to_rabbitmq_mixin_queue = multiprocessing.Queue()
 
         threads = []
 
         # Create thread for redo queue.
 
         redo_thread = RabbitmqPublishThread(
-            self.redo_queue,
+            self.execute_write_to_rabbitmq_mixin_queue,
             self.config.get("rabbitmq_redo_host"),
             self.config.get("rabbitmq_redo_queue"),
             self.config.get("rabbitmq_redo_username"),
@@ -1582,19 +1576,15 @@ class ExecuteWriteToRabbitmqMixin():
         for thread in threads:
             thread.start()
 
-        # Collect inactive threads from master process.
-
-        for thread in threads:
-            thread.join()
-
     def process_redo_record(self, redo_record=None):
         '''
         Process a single Senzing redo record.
         Simply send to RabbitMQ.
         '''
 
+        logging.debug(message_debug(905, threading.current_thread().name, redo_record))
         assert type(redo_record) == str
-        self.redo_queue.put(redo_record)
+        self.execute_write_to_rabbitmq_mixin_queue.put(redo_record)
         self.config['sent_to_redo_queue'] += 1
 
 # -----------------------------------------------------------------------------
@@ -1605,7 +1595,7 @@ class ExecuteWriteToRabbitmqMixin():
 class ExecuteWriteToKafkaMixin():
 
     def __init__(self, *args, **kwargs):
-        logging.info(message_info(132, "ExecuteWriteToKafkaMixin"))
+        logging.debug(message_debug(996, "ExecuteWriteToKafkaMixin"))
 
         kafka_redo_bootstrap_server = self.config.get('kafka_redo_bootstrap_server')
         self.kafka_redo_topic = self.config.get('kafka_redo_topic')
@@ -1630,10 +1620,11 @@ class ExecuteWriteToKafkaMixin():
         Process a single Senzing redo record.
         Simply send to Kafka.
         '''
+
+        logging.debug(message_debug(909, threading.current_thread().name, self.kafka_redo_topic, redo_record))
         assert type(redo_record) == str
 
         try:
-            logging.debug(message_debug(909, threading.current_thread().name, self.kafka_redo_topic, redo_record))
             self.kafka_producer.produce(self.kafka_redo_topic, redo_record, on_delivery=self.on_kafka_delivery)
             self.config['sent_to_redo_queue'] += 1
         except BufferError as err:
@@ -1665,7 +1656,7 @@ class OutputInternalMixin():
     ''' This is a "null object". '''
 
     def __init__(self, *args, **kwargs):
-        logging.info(message_info(132, "OutputInternalMixin"))
+        logging.debug(message_debug(996, "OutputInternalMixin"))
 
     def send_to_failure_queue(self, message):
         assert type(message) == str
@@ -1685,7 +1676,7 @@ class OutputInternalMixin():
 class OutputKafkaMixin():
 
     def __init__(self, *args, **kwargs):
-        logging.info(message_info(132, "OutputKafkaMixin"))
+        logging.debug(message_debug(996, "OutputKafkaMixin"))
 
         # Kafka configuration for failure queuing.
 
@@ -1749,17 +1740,17 @@ class OutputKafkaMixin():
 class OutputRabbitmqMixin():
 
     def __init__(self, *args, **kwargs):
-        logging.info(message_info(132, "OutputRabbitmqMixin"))
+        logging.debug(message_debug(996, "OutputRabbitmqMixin"))
 
-        self.failure_queue = multiprocessing.Queue()
-        self.info_queue = multiprocessing.Queue()
+        self.output_rabbitmq_mixin_failure_queue = multiprocessing.Queue()
+        self.output_rabbitmq_mixin_info_queue = multiprocessing.Queue()
 
         threads = []
 
         # Create thread for info queue.
 
         info_thread = RabbitmqPublishThread(
-            self.info_queue,
+            self.output_rabbitmq_mixin_info_queue,
             self.config.get("rabbitmq_info_host"),
             self.config.get("rabbitmq_info_queue"),
             self.config.get("rabbitmq_info_username"),
@@ -1771,7 +1762,7 @@ class OutputRabbitmqMixin():
         # Create thread for failure queue.
 
         failure_thread = RabbitmqPublishThread(
-            self.failure_queue,
+            self.output_rabbitmq_mixin_failure_queue,
             self.config.get("rabbitmq_failure_host"),
             self.config.get("rabbitmq_failure_queue"),
             self.config.get("rabbitmq_failure_username"),
@@ -1785,19 +1776,14 @@ class OutputRabbitmqMixin():
         for thread in threads:
             thread.start()
 
-        # Collect inactive threads from master process.
-
-        for thread in threads:
-            thread.join()
-
     def send_to_failure_queue(self, message):
         assert type(message) == str
-        self.failure_queue.put(message)
+        self.output_rabbitmq_mixin_failure_queue.put(message)
         self.config['sent_to_failure_queue'] += 1
 
     def send_to_info_queue(self, message):
         assert type(message) == str
-        self.info_queue.put(message)
+        self.output_rabbitmq_mixin_info_queue.put(message)
         self.config['sent_to_info_queue'] += 1
 
 # =============================================================================
@@ -1816,7 +1802,7 @@ class OutputRabbitmqMixin():
 class QueueInternalMixin():
 
     def __init__(self, *args, **kwargs):
-        logging.info(message_info(132, "QueueInternalMixin"))
+        logging.debug(message_debug(996, "QueueInternalMixin"))
 
     def send_to_redo_queue(self, redo_record):
         assert type(redo_record) == str
@@ -1840,6 +1826,7 @@ class ProcessRedoQueueThread(threading.Thread):
 
     def __init__(self, config=None, g2_engine=None, g2_configuration_manager=None, redo_queue=None):
         threading.Thread.__init__(self)
+        logging.debug(message_debug(997, "ProcessRedoQueueThread"))
         self.config = config
         self.g2_engine = g2_engine
         self.g2_configuration_manager = g2_configuration_manager
@@ -1919,6 +1906,7 @@ class QueueRedoRecordsThread(threading.Thread):
 
     def __init__(self, config=None, g2_engine=None, redo_queue=None):
         threading.Thread.__init__(self)
+        logging.debug(message_debug(997, "QueueRedoRecordsThread"))
         self.config = config
         self.g2_engine = g2_engine
         self.redo_queue = redo_queue
@@ -1991,6 +1979,7 @@ class QueueRedoRecordsThread(threading.Thread):
 class ProcessRedoQueueInternalWithInfoThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWithInfoMixin, OutputInternalMixin):
 
     def __init__(self, *args, **kwargs):
+        logging.debug(message_debug(997, "ProcessRedoQueueInternalWithInfoThread"))
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
@@ -1998,6 +1987,7 @@ class ProcessRedoQueueInternalWithInfoThread(ProcessRedoQueueThread, InputIntern
 class ProcessRedoThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteMixin, OutputInternalMixin):
 
     def __init__(self, *args, **kwargs):
+        logging.debug(message_debug(997, "ProcessRedoThread"))
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
@@ -2005,6 +1995,7 @@ class ProcessRedoThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteMixin
 class QueueRedoRecordsInternalThread(QueueRedoRecordsThread, QueueInternalMixin):
 
     def __init__(self, *args, **kwargs):
+        logging.debug(message_debug(997, "QueueRedoRecordsInternalThread"))
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
@@ -2014,6 +2005,7 @@ class QueueRedoRecordsInternalThread(QueueRedoRecordsThread, QueueInternalMixin)
 class ProcessReadFromKafkaThread(ProcessRedoQueueThread, InputKafkaMixin, ExecuteMixin, OutputInternalMixin):
 
     def __init__(self, *args, **kwargs):
+        logging.debug(message_debug(997, "ProcessReadFromKafkaThread"))
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
@@ -2021,6 +2013,7 @@ class ProcessReadFromKafkaThread(ProcessRedoQueueThread, InputKafkaMixin, Execut
 class ProcessReadFromKafkaWithinfoThread(ProcessRedoQueueThread, InputKafkaMixin, ExecuteWithInfoMixin, OutputKafkaMixin):
 
     def __init__(self, *args, **kwargs):
+        logging.debug(message_debug(997, "ProcessReadFromKafkaWithinfoThread"))
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
@@ -2028,6 +2021,7 @@ class ProcessReadFromKafkaWithinfoThread(ProcessRedoQueueThread, InputKafkaMixin
 class ProcessRedoWithinfoKafkaThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWithInfoMixin, OutputKafkaMixin):
 
     def __init__(self, *args, **kwargs):
+        logging.debug(message_debug(997, "ProcessRedoWithinfoKafkaThread"))
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
@@ -2035,6 +2029,7 @@ class ProcessRedoWithinfoKafkaThread(ProcessRedoQueueThread, InputInternalMixin,
 class QueueRedoRecordsKafkaThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWriteToKafkaMixin):
 
     def __init__(self, *args, **kwargs):
+        logging.debug(message_debug(997, "QueueRedoRecordsKafkaThread"))
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
@@ -2044,6 +2039,7 @@ class QueueRedoRecordsKafkaThread(ProcessRedoQueueThread, InputInternalMixin, Ex
 class ProcessReadFromRabbitmqThread(ProcessRedoQueueThread, InputRabbitmqMixin, ExecuteMixin, OutputInternalMixin):
 
     def __init__(self, *args, **kwargs):
+        logging.debug(message_debug(997, "ProcessReadFromRabbitmqThread"))
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
@@ -2051,6 +2047,7 @@ class ProcessReadFromRabbitmqThread(ProcessRedoQueueThread, InputRabbitmqMixin, 
 class ProcessReadFromRabbitmqWithinfoThread(ProcessRedoQueueThread, InputRabbitmqMixin, ExecuteWithInfoMixin, OutputRabbitmqMixin):
 
     def __init__(self, *args, **kwargs):
+        logging.debug(message_debug(997, "ProcessReadFromRabbitmqWithinfoThread"))
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
@@ -2058,6 +2055,7 @@ class ProcessReadFromRabbitmqWithinfoThread(ProcessRedoQueueThread, InputRabbitm
 class ProcessRedoWithinfoRabbitmqThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWithInfoMixin, OutputRabbitmqMixin):
 
     def __init__(self, *args, **kwargs):
+        logging.debug(message_debug(997, "ProcessRedoWithinfoRabbitmqThread"))
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
@@ -2065,6 +2063,7 @@ class ProcessRedoWithinfoRabbitmqThread(ProcessRedoQueueThread, InputInternalMix
 class QueueRedoRecordsRabbitmqThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWriteToRabbitmqMixin):
 
     def __init__(self, *args, **kwargs):
+        logging.debug(message_debug(997, "QueueRedoRecordsRabbitmqThread"))
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
