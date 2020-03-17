@@ -684,12 +684,12 @@ MESSAGE_DEBUG = 900
 
 message_dictionary = {
     "100": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}I",
-    "103": "Kafka topic: {0}; message: {1}; error: {2}; error: {3}",
+    "103": "Thread: {0} Kafka topic: {1}; message: {2}; error: {3}; error: {4}",
     "120": "Sleeping for requested delay of {0} seconds.",
-    "121": "Adding JSON to failure queue: {0}",
+    "121": "Thread: {0} Adding JSON to failure queue: {1}",
     "125": "G2 engine statistics: {0}",
     "127": "Monitor: {0}",
-    "128": "Adding JSON to info queue: {0}",
+    "128": "Thread: {0} Adding JSON to info queue: {1}",
     "129": "{0} is running.",
     "130": "{0} has exited.",
     "131": "Adding redo record to redo queue: {0}",
@@ -715,18 +715,18 @@ message_dictionary = {
     "300": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}W",
     "301": "g2_engine.process() return_code: {0} redo_record: {1}",
     "302": "g2_engine.processWithInfo() return_code: {0} redo_record: {1}",
-    "404": "Kafka topic: {0} BufferError: {1} Message: {2}",
-    "405": "Kafka topic: {0} KafkaException: {1} Message: {2}",
-    "406": "Kafka topic: {0} NotImplemented: {1} Message: {2}",
-    "407": "Kafka topic: {0} Unknown error: {1} Message: {2}",
-    "408": "Kafka topic: {0}; message: {1}; error: {2}; error: {3}",
-    "410": "RabbitMQ queue: {0} Unknown RabbitMQ error when connecting: {1}.",
-    "411": "RabbitMQ queue: {0} Unknown RabbitMQ error: {1} Message: {2}",
-    "412": "RabbitMQ queue: {0} AMQPConnectionError: {1} Could not connect to RabbitMQ host at {2}. The host name maybe wrong, it may not be ready, or your credentials are incorrect. See the RabbitMQ log for more details.",
+    "404": "Thread: {0} Kafka topic: {1} BufferError: {2} Message: {3}",
+    "405": "Thread: {0} Kafka topic: {1} KafkaException: {2} Message: {3}",
+    "406": "Thread: {0} Kafka topic: {1} NotImplemented: {2} Message: {3}",
+    "407": "Thread: {0} Kafka topic: {1} Unknown error: {2} Message: {3}",
+    "408": "Thread: {0} Kafka topic: {1}; message: {2}; error: {3}; error: {4}",
+    "410": "Thread: {0} RabbitMQ queue: {1} Unknown RabbitMQ error when connecting: {2}.",
+    "411": "Thread: {0} RabbitMQ queue: {1} Unknown RabbitMQ error: {2} Message: {3}",
+    "412": "Thread: {0} RabbitMQ queue: {1} AMQPConnectionError: {2} Could not connect to RabbitMQ host at {3}. The host name maybe wrong, it may not be ready, or your credentials are incorrect. See the RabbitMQ log for more details.",
     "499": "{0}",
     "500": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}E",
-    "561": "Unknown RabbitMQ error when connecting: {0}.",
-    "562": "Could not connect to RabbitMQ host at {1}. The host name maybe wrong, it may not be ready, or your credentials are incorrect. See the RabbitMQ log for more details. Error: {0}",
+    "561": "Thread: {0} Unknown RabbitMQ error when connecting: {1}",
+    "562": "Thread: {0} Could not connect to RabbitMQ host at {2}. The host name maybe wrong, it may not be ready, or your credentials are incorrect. See the RabbitMQ log for more details. Error: {1}",
     "695": "Unknown database scheme '{0}' in database url '{1}'",
     "696": "Bad SENZING_SUBCOMMAND: {0}.",
     "697": "No processing done.",
@@ -737,10 +737,11 @@ message_dictionary = {
     "702": "G2Engine.getRedoRecord() G2ModuleNotInitialized: {0} XML: {1}",
     "703": "G2Engine.getRedoRecord() err: {0}",
     "706": "G2Engine.process() bad return code: {0}",
-    "707": "G2Engine.process() G2ModuleNotInitialized: {0} XML: {1}",
+    "707": "Thread: {0} G2Engine.process() G2ModuleNotInitialized: {0} XML: {1}",
     "708": "G2Engine.process() G2ModuleGenericException: {0} XML: {1}",
-    "709": "G2Engine.process() err: {0}",
+    "709": "Thread: {0} G2Engine.process() err: {1}",
     "721": "Running low on workers.  May need to restart",
+    "722": "Thread: {0} Kafka commit failed for {1}",
     "730": "There are not enough safe characters to do the translation. Unsafe Characters: {0}; Safe Characters: {1}",
     "885": "License has expired.",
     "886": "G2Engine.addRecord() bad return code: {0}; JSON: {1}",
@@ -767,8 +768,8 @@ message_dictionary = {
     "910": "Thread: {0} Queue: {1} Subscribe Message: {2}",
     "912": "RabbitmqSubscribeThread: {0} Host: {1} Queue-name: {2} Username: {3}  Prefetch-count: {4}",
     "913": "RabbitmqPublishThread: {0} Host: {1} Queue-name: {2} Username: {3}",
-    "996": "Using Mixin: {0}",
-    "997": "Using Thread: {0}",
+    "996": "Thread: {0} Using Mixin: {1}",
+    "997": "Thread: {0} Using Thread: {1}",
     "998": "Debugging enabled.",
     "999": "{0}",
 }
@@ -1115,9 +1116,9 @@ class RabbitmqPublishThread(threading.Thread):
 
     def __init__(self, internal_queue, rabbitmq_host, rabbitmq_queue_name, rabbitmq_username, rabbitmq_password):
         threading.Thread.__init__(self)
-        logging.debug(message_debug(997, "RabbitmqPublishThread"))
-        self.internal_queue = internal_queue
-        self.rabbitmq_queue_name = rabbitmq_queue_name
+        logging.debug(message_debug(997, threading.current_thread().name, "RabbitmqPublishThread"))
+        self.rabbitmq_publish_thread_queue = internal_queue
+        self.rabbitmq_publish_thread_rabbitmq_queue_name = rabbitmq_queue_name
 
         logging.debug(message_debug(913,
             threading.current_thread().name,
@@ -1129,36 +1130,37 @@ class RabbitmqPublishThread(threading.Thread):
 
         try:
             credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
-            connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host, credentials=credentials))
+            parameters = pika.ConnectionParameters(host=rabbitmq_host, credentials=credentials, heartbeat=5)
+            connection = pika.BlockingConnection(parameters)
             self.channel = connection.channel()
             self.channel.queue_declare(queue=rabbitmq_queue_name)
         except (pika.exceptions.AMQPConnectionError) as err:
-            exit_error(412, rabbitmq_queue_name, err, rabbitmq_host)
+            exit_error(412, threading.current_thread().name, rabbitmq_queue_name, err, rabbitmq_host)
         except BaseException as err:
-            exit_error(410, rabbitmq_queue_name, err)
+            exit_error(410, threading.current_thread().name, rabbitmq_queue_name, err)
 
     def run(self):
         while True:
-            message = self.internal_queue.get()
+            message = self.rabbitmq_publish_thread_queue.get()
             try:
-                logging.debug(message_debug(909, threading.current_thread().name, self.rabbitmq_queue_name, message))
+                logging.debug(message_debug(909, threading.current_thread().name, self.rabbitmq_publish_thread_rabbitmq_queue_name, message))
                 self.channel.basic_publish(
                     exchange='',
-                    routing_key=self.rabbitmq_queue_name,
+                    routing_key=self.rabbitmq_publish_thread_rabbitmq_queue_name,
                     body=message,
                     properties=pika.BasicProperties(
                         delivery_mode=1  # Make message non-persistent
                     )
                 )
             except BaseException as err:
-                logging.warning(message_warning(411, self.rabbitmq_queue_name, err, message))
+                logging.warning(message_warning(411, threading.current_thread().name, self.rabbitmq_publish_thread_rabbitmq_queue_name, err, message))
 
 
 class RabbitmqSubscribeThread(threading.Thread):
 
     def __init__(self, internal_queue, rabbitmq_host, rabbitmq_queue_name, rabbitmq_username, rabbitmq_password, rabbitmq_prefetch_count):
         threading.Thread.__init__(self)
-        logging.debug(message_debug(997, "RabbitmqSubscribeThread"))
+        logging.debug(message_debug(997, threading.current_thread().name, "RabbitmqSubscribeThread"))
 
         logging.debug(message_debug(912,
             threading.current_thread().name,
@@ -1167,8 +1169,8 @@ class RabbitmqSubscribeThread(threading.Thread):
             rabbitmq_username,
             rabbitmq_prefetch_count))
 
-        self.internal_queue = internal_queue
-        self.rabbitmq_queue_name = rabbitmq_queue_name
+        self.rabbitmq_subscribe_thread_queue = internal_queue
+        self.rabbitmq_subscribe_thread_rabbitmq_queue_name = rabbitmq_queue_name
 
         # Create RabbitMQ connection.
 
@@ -1180,9 +1182,9 @@ class RabbitmqSubscribeThread(threading.Thread):
             self.channel.basic_qos(prefetch_count=rabbitmq_prefetch_count)
             self.channel.basic_consume(on_message_callback=self.callback, queue=rabbitmq_queue_name)
         except pika.exceptions.AMQPConnectionError as err:
-            exit_error(562, err, rabbitmq_host)
+            exit_error(562, threading.current_thread().name, err, rabbitmq_host)
         except BaseException as err:
-            exit_error(561, err)
+            exit_error(561, threading.current_thread().name, err)
 
     def callback(self, channel, method, header, body):
         '''
@@ -1190,8 +1192,8 @@ class RabbitmqSubscribeThread(threading.Thread):
         Read from RabbitMQ and put into an internal queue.
         '''
         message = body.decode()
-        logging.debug(message_debug(910, threading.current_thread().name, self.rabbitmq_queue_name, message))
-        self.internal_queue.put(message)
+        logging.debug(message_debug(910, threading.current_thread().name, self.rabbitmq_subscribe_thread_rabbitmq_queue_name, message))
+        self.rabbitmq_subscribe_thread_queue.put(message)
         channel.basic_ack(delivery_tag=method.delivery_tag)
 
     def run(self):
@@ -1323,7 +1325,7 @@ class MonitorThread(threading.Thread):
 class InputInternalMixin():
 
     def __init__(self, *args, **kwargs):
-        logging.debug(message_debug(996, "InputInternalMixin"))
+        logging.debug(message_debug(996, threading.current_thread().name, "InputInternalMixin"))
 
     def redo_records(self):
         '''
@@ -1346,7 +1348,7 @@ class InputInternalMixin():
 class InputKafkaMixin():
 
     def __init__(self, *args, **kwargs):
-        logging.debug(message_debug(996, "InputKafkaMixin"))
+        logging.debug(message_debug(996, threading.current_thread().name, "InputKafkaMixin"))
 
         # Create Kafka client.
 
@@ -1380,7 +1382,7 @@ class InputKafkaMixin():
                 if kafka_message.error().code() == confluent_kafka.KafkaError._PARTITION_EOF:
                     continue
                 else:
-                    logging.error(message_error(722, kafka_message.error()))
+                    logging.error(message_error(722, threading.current_thread().name, kafka_message.error()))
                     continue
 
             # Construct and verify Kafka message.
@@ -1413,7 +1415,7 @@ class InputKafkaMixin():
 class InputRabbitmqMixin():
 
     def __init__(self, *args, **kwargs):
-        logging.debug(message_debug(996, "InputRabbitmqMixin"))
+        logging.debug(message_debug(996, threading.current_thread().name, "InputRabbitmqMixin"))
 
         self.input_rabbitmq_mixin_queue = multiprocessing.Queue(2)
 
@@ -1429,6 +1431,8 @@ class InputRabbitmqMixin():
             self.config.get("rabbitmq_redo_password"),
             self.config.get("rabbitmq_prefetch_count")
         )
+        redo_thread.name = "{0}-{1}".format(threading.current_thread().name, "redo")
+        threads.append(redo_thread)
 
         # Start threads.
 
@@ -1468,7 +1472,7 @@ class InputRabbitmqMixin():
 class ExecuteMixin():
 
     def __init__(self, *args, **kwargs):
-        logging.debug(message_debug(996, "ExecuteMixin"))
+        logging.debug(message_debug(996, threading.current_thread().name, "ExecuteMixin"))
 
     def process_redo_record(self, redo_record=None):
         '''
@@ -1484,7 +1488,7 @@ class ExecuteMixin():
             self.g2_engine.process(redo_record)
             self.config['processed_redo_records'] += 1
         except G2Exception.G2ModuleNotInitialized as err:
-            exit_error(707, err, redo_record)
+            exit_error(707, threading.current_thread().name, err, redo_record)
         except Exception as err:
             if self.is_g2_default_configuration_changed():
                 self.update_active_g2_configuration()
@@ -1492,7 +1496,7 @@ class ExecuteMixin():
                 self.g2_engine.process(redo_record)
                 self.config['processed_redo_records'] += 1
             else:
-                exit_error(709, err)
+                exit_error(709, threading.current_thread().name, err)
 
 # -----------------------------------------------------------------------------
 # Class: ExecuteWithInfoMixin
@@ -1502,7 +1506,7 @@ class ExecuteMixin():
 class ExecuteWithInfoMixin():
 
     def __init__(self, *args, **kwargs):
-        logging.debug(message_debug(996, "ExecuteWithInfoMixin"))
+        logging.debug(message_debug(996, threading.current_thread().name, "ExecuteWithInfoMixin"))
         self.g2_engine_flags = 0
 
     def process_redo_record(self, redo_record=None):
@@ -1523,7 +1527,7 @@ class ExecuteWithInfoMixin():
             self.config['processed_redo_records'] += 1
         except G2Exception.G2ModuleNotInitialized as err:
             self.send_to_failure_queue(redo_record)
-            exit_error(707, err, info_bytearray.decode())
+            exit_error(707, threading.current_thread().name, err, info_bytearray.decode())
         except Exception as err:
             if self.is_g2_default_configuration_changed():
                 self.update_active_g2_configuration()
@@ -1532,7 +1536,7 @@ class ExecuteWithInfoMixin():
                 self.config['processed_redo_records'] += 1
             else:
                 self.send_to_failure_queue(redo_record)
-                exit_error(709, err)
+                exit_error(709, threading.current_thread().name, err)
 
         info_json = info_bytearray.decode()
 
@@ -1553,7 +1557,7 @@ class ExecuteWithInfoMixin():
 class ExecuteWriteToRabbitmqMixin():
 
     def __init__(self, *args, **kwargs):
-        logging.debug(message_debug(996, "ExecuteWriteToRabbitmqMixin"))
+        logging.debug(message_debug(996, threading.current_thread().name, "ExecuteWriteToRabbitmqMixin"))
 
         self.execute_write_to_rabbitmq_mixin_queue = multiprocessing.Queue()
 
@@ -1568,7 +1572,7 @@ class ExecuteWriteToRabbitmqMixin():
             self.config.get("rabbitmq_redo_username"),
             self.config.get("rabbitmq_redo_password")
         )
-        redo_thread.name = "{0}-{1}".format(self.name, "redo")
+        redo_thread.name = "{0}-{1}".format(threading.current_thread().name, "redo")
         threads.append(redo_thread)
 
         # Start threads.
@@ -1595,7 +1599,7 @@ class ExecuteWriteToRabbitmqMixin():
 class ExecuteWriteToKafkaMixin():
 
     def __init__(self, *args, **kwargs):
-        logging.debug(message_debug(996, "ExecuteWriteToKafkaMixin"))
+        logging.debug(message_debug(996, threading.current_thread().name, "ExecuteWriteToKafkaMixin"))
 
         kafka_redo_bootstrap_server = self.config.get('kafka_redo_bootstrap_server')
         self.kafka_redo_topic = self.config.get('kafka_redo_topic')
@@ -1611,9 +1615,9 @@ class ExecuteWriteToKafkaMixin():
         message_topic = message.topic()
         message_value = message.value()
         message_error = message.error()
-        logging.debug(message_debug(103, message_topic, message_value, message_error, error))
+        logging.debug(message_debug(103, threading.current_thread().name, message_topic, message_value, message_error, error))
         if error is not None:
-            logging.warning(message_warn(408, message_topic, message_value, message_error, error))
+            logging.warning(message_warn(408, threading.current_thread().name, message_topic, message_value, message_error, error))
 
     def process_redo_record(self, redo_record=None):
         '''
@@ -1628,13 +1632,13 @@ class ExecuteWriteToKafkaMixin():
             self.kafka_producer.produce(self.kafka_redo_topic, redo_record, on_delivery=self.on_kafka_delivery)
             self.config['sent_to_redo_queue'] += 1
         except BufferError as err:
-            logging.warning(message_warn(404, self.kafka_redo_topic, err, redo_record))
+            logging.warning(message_warn(404, threading.current_thread().name, self.kafka_redo_topic, err, redo_record))
         except confluent_kafka.KafkaException as err:
-            logging.warning(message_warn(405, self.kafka_redo_topic, err, redo_record))
+            logging.warning(message_warn(405, threading.current_thread().name, self.kafka_redo_topic, err, redo_record))
         except NotImplemented as err:
-            logging.warning(message_warn(406, self.kafka_redo_topic, err, redo_record))
+            logging.warning(message_warn(406, threading.current_thread().name, self.kafka_redo_topic, err, redo_record))
         except:
-            logging.warning(message_warn(407, self.kafka_redo_topic, err, redo_record))
+            logging.warning(message_warn(407, threading.current_thread().name, self.kafka_redo_topic, err, redo_record))
 
 # =============================================================================
 # Mixins: Output*
@@ -1656,16 +1660,16 @@ class OutputInternalMixin():
     ''' This is a "null object". '''
 
     def __init__(self, *args, **kwargs):
-        logging.debug(message_debug(996, "OutputInternalMixin"))
+        logging.debug(message_debug(996, threading.current_thread().name, "OutputInternalMixin"))
 
     def send_to_failure_queue(self, message):
         assert type(message) == str
-        logging.info(message_info(121, message))
+        logging.info(message_info(121, threading.current_thread().name, message))
         self.config['sent_to_failure_queue'] += 1
 
     def send_to_info_queue(self, message):
         assert type(message) == str
-        logging.info(message_info(128, message))
+        logging.info(message_info(128, threading.current_thread().name, message))
         self.config['sent_to_info_queue'] += 1
 
 # -----------------------------------------------------------------------------
@@ -1676,7 +1680,7 @@ class OutputInternalMixin():
 class OutputKafkaMixin():
 
     def __init__(self, *args, **kwargs):
-        logging.debug(message_debug(996, "OutputKafkaMixin"))
+        logging.debug(message_debug(996, threading.current_thread().name, "OutputKafkaMixin"))
 
         # Kafka configuration for failure queuing.
 
@@ -1698,9 +1702,9 @@ class OutputKafkaMixin():
         message_topic = message.topic()
         message_value = message.value()
         message_error = message.error()
-        logging.debug(message_debug(103, message_topic, message_value, message_error, error))
+        logging.debug(message_debug(103, threading.current_thread().name, message_topic, message_value, message_error, error))
         if error is not None:
-            logging.warning(message_warn(408, message_topic, message_value, message_error, error))
+            logging.warning(message_warn(408, threading.current_thread().name, message_topic, message_value, message_error, error))
 
     def send_to_failure_queue(self, message):
         assert type(message) == str
@@ -1709,13 +1713,13 @@ class OutputKafkaMixin():
             self.kafka_failure_producer.produce(self.kafka_failure_topic, message, on_delivery=self.on_kafka_delivery)
             self.config['sent_to_failure_queue'] += 1
         except BufferError as err:
-            logging.warning(message_warn(404, self.kafka_failure_topic, err, message))
+            logging.warning(message_warn(404, threading.current_thread().name, self.kafka_failure_topic, err, message))
         except confluent_kafka.KafkaException as err:
-            logging.warning(message_warn(405, self.kafka_failure_topic, err, message))
+            logging.warning(message_warn(405, threading.current_thread().name, self.kafka_failure_topic, err, message))
         except NotImplemented as err:
-            logging.warning(message_warn(406, self.kafka_failure_topic, err, message))
+            logging.warning(message_warn(406, threading.current_thread().name, self.kafka_failure_topic, err, message))
         except:
-            logging.warning(message_warn(407, self.kafka_failure_topic, err, message))
+            logging.warning(message_warn(407, threading.current_thread().name, self.kafka_failure_topic, err, message))
 
     def send_to_info_queue(self, message):
         assert type(message) == str
@@ -1724,13 +1728,13 @@ class OutputKafkaMixin():
             self.kafka_info_producer.produce(self.kafka_info_topic, message, on_delivery=self.on_kafka_delivery)
             self.config['sent_to_info_queue'] += 1
         except BufferError as err:
-            logging.warning(message_warn(404, self.kafka_info_topic, err, message))
+            logging.warning(message_warn(404, threading.current_thread().name, self.kafka_info_topic, err, message))
         except confluent_kafka.KafkaException as err:
-            logging.warning(message_warn(405, self.kafka_info_topic, err, message))
+            logging.warning(message_warn(405, threading.current_thread().name, self.kafka_info_topic, err, message))
         except NotImplemented as err:
-            logging.warning(message_warn(406, self.kafka_info_topic, err, message))
+            logging.warning(message_warn(406, threading.current_thread().name, self.kafka_info_topic, err, message))
         except:
-            logging.warning(message_warn(407, self.kafka_info_topic, err, message))
+            logging.warning(message_warn(407, threading.current_thread().name, self.kafka_info_topic, err, message))
 
 # -----------------------------------------------------------------------------
 # Class: OutputRabbitmqMixin
@@ -1740,7 +1744,7 @@ class OutputKafkaMixin():
 class OutputRabbitmqMixin():
 
     def __init__(self, *args, **kwargs):
-        logging.debug(message_debug(996, "OutputRabbitmqMixin"))
+        logging.debug(message_debug(996, threading.current_thread().name, "OutputRabbitmqMixin"))
 
         self.output_rabbitmq_mixin_failure_queue = multiprocessing.Queue()
         self.output_rabbitmq_mixin_info_queue = multiprocessing.Queue()
@@ -1756,7 +1760,7 @@ class OutputRabbitmqMixin():
             self.config.get("rabbitmq_info_username"),
             self.config.get("rabbitmq_info_password")
         )
-        info_thread.name = "{0}-{1}".format(self.name, "info")
+        info_thread.name = "{0}-{1}".format(threading.current_thread().name, "info")
         threads.append(info_thread)
 
         # Create thread for failure queue.
@@ -1768,7 +1772,7 @@ class OutputRabbitmqMixin():
             self.config.get("rabbitmq_failure_username"),
             self.config.get("rabbitmq_failure_password")
         )
-        failure_thread.name = "{0}-{1}".format(self.name, "failure")
+        failure_thread.name = "{0}-{1}".format(threading.current_thread().name, "failure")
         threads.append(failure_thread)
 
         # Start threads.
@@ -1802,7 +1806,7 @@ class OutputRabbitmqMixin():
 class QueueInternalMixin():
 
     def __init__(self, *args, **kwargs):
-        logging.debug(message_debug(996, "QueueInternalMixin"))
+        logging.debug(message_debug(996, threading.current_thread().name, "QueueInternalMixin"))
 
     def send_to_redo_queue(self, redo_record):
         assert type(redo_record) == str
@@ -1826,7 +1830,7 @@ class ProcessRedoQueueThread(threading.Thread):
 
     def __init__(self, config=None, g2_engine=None, g2_configuration_manager=None, redo_queue=None):
         threading.Thread.__init__(self)
-        logging.debug(message_debug(997, "ProcessRedoQueueThread"))
+        logging.debug(message_debug(997, threading.current_thread().name, "ProcessRedoQueueThread"))
         self.config = config
         self.g2_engine = g2_engine
         self.g2_configuration_manager = g2_configuration_manager
@@ -1906,7 +1910,7 @@ class QueueRedoRecordsThread(threading.Thread):
 
     def __init__(self, config=None, g2_engine=None, redo_queue=None):
         threading.Thread.__init__(self)
-        logging.debug(message_debug(997, "QueueRedoRecordsThread"))
+        logging.debug(message_debug(997, threading.current_thread().name, "QueueRedoRecordsThread"))
         self.config = config
         self.g2_engine = g2_engine
         self.redo_queue = redo_queue
@@ -1979,7 +1983,7 @@ class QueueRedoRecordsThread(threading.Thread):
 class ProcessRedoQueueInternalWithInfoThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWithInfoMixin, OutputInternalMixin):
 
     def __init__(self, *args, **kwargs):
-        logging.debug(message_debug(997, "ProcessRedoQueueInternalWithInfoThread"))
+        logging.debug(message_debug(997, threading.current_thread().name, "ProcessRedoQueueInternalWithInfoThread"))
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
@@ -1987,7 +1991,7 @@ class ProcessRedoQueueInternalWithInfoThread(ProcessRedoQueueThread, InputIntern
 class ProcessRedoThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteMixin, OutputInternalMixin):
 
     def __init__(self, *args, **kwargs):
-        logging.debug(message_debug(997, "ProcessRedoThread"))
+        logging.debug(message_debug(997, threading.current_thread().name, "ProcessRedoThread"))
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
@@ -1995,7 +1999,7 @@ class ProcessRedoThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteMixin
 class QueueRedoRecordsInternalThread(QueueRedoRecordsThread, QueueInternalMixin):
 
     def __init__(self, *args, **kwargs):
-        logging.debug(message_debug(997, "QueueRedoRecordsInternalThread"))
+        logging.debug(message_debug(997, threading.current_thread().name, "QueueRedoRecordsInternalThread"))
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
@@ -2005,7 +2009,7 @@ class QueueRedoRecordsInternalThread(QueueRedoRecordsThread, QueueInternalMixin)
 class ProcessReadFromKafkaThread(ProcessRedoQueueThread, InputKafkaMixin, ExecuteMixin, OutputInternalMixin):
 
     def __init__(self, *args, **kwargs):
-        logging.debug(message_debug(997, "ProcessReadFromKafkaThread"))
+        logging.debug(message_debug(997, threading.current_thread().name, "ProcessReadFromKafkaThread"))
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
@@ -2013,7 +2017,7 @@ class ProcessReadFromKafkaThread(ProcessRedoQueueThread, InputKafkaMixin, Execut
 class ProcessReadFromKafkaWithinfoThread(ProcessRedoQueueThread, InputKafkaMixin, ExecuteWithInfoMixin, OutputKafkaMixin):
 
     def __init__(self, *args, **kwargs):
-        logging.debug(message_debug(997, "ProcessReadFromKafkaWithinfoThread"))
+        logging.debug(message_debug(997, threading.current_thread().name, "ProcessReadFromKafkaWithinfoThread"))
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
@@ -2021,7 +2025,7 @@ class ProcessReadFromKafkaWithinfoThread(ProcessRedoQueueThread, InputKafkaMixin
 class ProcessRedoWithinfoKafkaThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWithInfoMixin, OutputKafkaMixin):
 
     def __init__(self, *args, **kwargs):
-        logging.debug(message_debug(997, "ProcessRedoWithinfoKafkaThread"))
+        logging.debug(message_debug(997, threading.current_thread().name, "ProcessRedoWithinfoKafkaThread"))
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
@@ -2029,7 +2033,7 @@ class ProcessRedoWithinfoKafkaThread(ProcessRedoQueueThread, InputInternalMixin,
 class QueueRedoRecordsKafkaThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWriteToKafkaMixin):
 
     def __init__(self, *args, **kwargs):
-        logging.debug(message_debug(997, "QueueRedoRecordsKafkaThread"))
+        logging.debug(message_debug(997, threading.current_thread().name, "QueueRedoRecordsKafkaThread"))
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
@@ -2039,7 +2043,7 @@ class QueueRedoRecordsKafkaThread(ProcessRedoQueueThread, InputInternalMixin, Ex
 class ProcessReadFromRabbitmqThread(ProcessRedoQueueThread, InputRabbitmqMixin, ExecuteMixin, OutputInternalMixin):
 
     def __init__(self, *args, **kwargs):
-        logging.debug(message_debug(997, "ProcessReadFromRabbitmqThread"))
+        logging.debug(message_debug(997, threading.current_thread().name, "ProcessReadFromRabbitmqThread"))
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
@@ -2047,7 +2051,7 @@ class ProcessReadFromRabbitmqThread(ProcessRedoQueueThread, InputRabbitmqMixin, 
 class ProcessReadFromRabbitmqWithinfoThread(ProcessRedoQueueThread, InputRabbitmqMixin, ExecuteWithInfoMixin, OutputRabbitmqMixin):
 
     def __init__(self, *args, **kwargs):
-        logging.debug(message_debug(997, "ProcessReadFromRabbitmqWithinfoThread"))
+        logging.debug(message_debug(997, threading.current_thread().name, "ProcessReadFromRabbitmqWithinfoThread"))
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
@@ -2055,7 +2059,7 @@ class ProcessReadFromRabbitmqWithinfoThread(ProcessRedoQueueThread, InputRabbitm
 class ProcessRedoWithinfoRabbitmqThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWithInfoMixin, OutputRabbitmqMixin):
 
     def __init__(self, *args, **kwargs):
-        logging.debug(message_debug(997, "ProcessRedoWithinfoRabbitmqThread"))
+        logging.debug(message_debug(997, threading.current_thread().name, "ProcessRedoWithinfoRabbitmqThread"))
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
@@ -2063,7 +2067,7 @@ class ProcessRedoWithinfoRabbitmqThread(ProcessRedoQueueThread, InputInternalMix
 class QueueRedoRecordsRabbitmqThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWriteToRabbitmqMixin):
 
     def __init__(self, *args, **kwargs):
-        logging.debug(message_debug(997, "QueueRedoRecordsRabbitmqThread"))
+        logging.debug(message_debug(997, threading.current_thread().name, "QueueRedoRecordsRabbitmqThread"))
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
