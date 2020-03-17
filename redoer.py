@@ -41,7 +41,7 @@ except ImportError:
 __all__ = []
 __version__ = "1.1.0"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2020-03-16'
+__updated__ = '2020-03-17'
 
 # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 SENZING_PRODUCT_ID = "5010"
@@ -726,6 +726,8 @@ message_dictionary = {
     "412": "RabbitMQ queue: {0} AMQPConnectionError: {1} Could not connect to RabbitMQ host at {2}. The host name maybe wrong, it may not be ready, or your credentials are incorrect. See the RabbitMQ log for more details.",
     "499": "{0}",
     "500": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}E",
+    "561": "Unknown RabbitMQ error when connecting: {0}.",
+    "562": "Could not connect to RabbitMQ host at {1}. The host name maybe wrong, it may not be ready, or your credentials are incorrect. See the RabbitMQ log for more details. Error: {0}",
     "695": "Unknown database scheme '{0}' in database url '{1}'",
     "696": "Bad SENZING_SUBCOMMAND: {0}.",
     "697": "No processing done.",
@@ -764,6 +766,8 @@ message_dictionary = {
     "908": "Thread: {0} g2_engine.reinitV2({1})",
     "909": "Thread: {0} Queue: {1} Publish Message: {2}",
     "910": "Thread: {0} Queue: {1} Subscribe Message: {2}",
+    "912": "RabbitmqSubscribeThread: {0} Host: {1} Queue-name: {2} Username: {3}  Prefetch-count: {4}",
+    "913": "RabbitmqPublishThread: {0} Host: {1} Queue-name: {2} Username: {3}",
     "998": "Debugging enabled.",
     "999": "{0}",
 }
@@ -1113,6 +1117,14 @@ class RabbitmqPublishThread(threading.Thread):
         self.internal_queue = internal_queue
         self.rabbitmq_queue_name = rabbitmq_queue_name
 
+        logging.debug(message_debug(913,
+            threading.current_thread().name,
+            rabbitmq_host,
+            rabbitmq_queue_name,
+            rabbitmq_username))
+
+        # Create RabbitMQ connection.
+
         try:
             credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
             connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host, credentials=credentials))
@@ -1144,8 +1156,18 @@ class RabbitmqSubscribeThread(threading.Thread):
 
     def __init__(self, internal_queue, rabbitmq_host, rabbitmq_queue_name, rabbitmq_username, rabbitmq_password, rabbitmq_prefetch_count):
         threading.Thread.__init__(self)
+
+        logging.debug(message_debug(912,
+            threading.current_thread().name,
+            rabbitmq_host,
+            rabbitmq_queue_name,
+            rabbitmq_username,
+            rabbitmq_prefetch_count))
+
         self.internal_queue = internal_queue
         self.rabbitmq_queue_name = rabbitmq_queue_name
+
+        # Create RabbitMQ connection.
 
         try:
             credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
