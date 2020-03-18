@@ -312,7 +312,7 @@ def get_parser():
                 "--kafka-bootstrap-server": {
                     "dest": "kafka_bootstrap_server",
                     "metavar": "SENZING_KAFKA_BOOTSTRAP_SERVER",
-                    "help": "Kafka bootstrap server. Default: localhost:9092"
+                    "help": "Kafka bootstrap server. Default: localhost:9162"
                 },
                 "--kafka-group": {
                     "dest": "kafka_group",
@@ -718,8 +718,7 @@ message_dictionary = {
     "298": "Exit {0}",
     "299": "{0}",
     "300": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}W",
-    "301": "g2_engine.process() return_code: {0} redo_record: {1}",
-    "302": "g2_engine.processWithInfo() return_code: {0} redo_record: {1}",
+
     "404": "Thread: {0} Kafka topic: {1} BufferError: {2} Message: {3}",
     "405": "Thread: {0} Kafka topic: {1} KafkaException: {2} Message: {3}",
     "406": "Thread: {0} Kafka topic: {1} NotImplemented: {2} Message: {3}",
@@ -766,14 +765,16 @@ message_dictionary = {
     "900": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}D",
     "901": "Thread: {0} g2_engine.getRedoRecord() -> {1}",
     "902": "Thread: {0} Added message to internal queue: {1}",
-    "903": "Thread: {0} redo_records() -> {1}",
-    "905": "Thread: {0} processing redo record: {1}",
     "906": "Thread: {0} re-processing redo record: {1}",
     "908": "Thread: {0} g2_engine.reinitV2({1})",
-    "909": "Thread: {0} Queue: {1} Publish Message: {2}",
-    "910": "Thread: {0} Queue: {1} Subscribe Message: {2}",
+    "910": "Thread: {0} g2_engine.process() redo_record: {1}",
+    "911": "Thread: {0} g2_engine.processWithInfo() return_code: {0} redo_record: {1} withInfo: {2}",
     "912": "RabbitmqSubscribeThread: {0} Host: {1} Queue-name: {2} Username: {3}  Prefetch-count: {4}",
     "913": "RabbitmqPublishThread: {0} Host: {1} Queue-name: {2} Username: {3}",
+    "916": "Thread: {0} Queue: {1} Publish Message: {2}",
+    "917": "Thread: {0} Queue: {1} Subscribe Message: {2}",
+    "918": "Thread: {0} redo_records() -> {1}",
+    "919": "Thread: {0} processing redo record: {1}",
     "995": "Thread: {0} Using Class: {1}",
     "996": "Thread: {0} Using Mixin: {1}",
     "997": "Thread: {0} Using Thread: {1}",
@@ -1169,7 +1170,7 @@ class Rabbitmq:
     def receive(self, callback=None):
 
         def on_message_callback(channel, method, properties, body):
-            logging.debug(message_debug(910, threading.current_thread().name, self.queue_name, body))
+            logging.debug(message_debug(917, threading.current_thread().name, self.queue_name, body))
 
             if callback is not None:
                 my_thread = threading.Thread(target=callback, args=(body,))
@@ -1194,7 +1195,7 @@ class Rabbitmq:
             logging.warning(message_warning(413, threading.current_thread().name, self.queue_name, err))
 
     def send(self, message):
-        logging.debug(message_debug(909, threading.current_thread().name, self.queue_name, message))
+        logging.debug(message_debug(916, threading.current_thread().name, self.queue_name, message))
         try:
             self.channel.basic_publish(
                 exchange=self.exchange,
@@ -1242,7 +1243,7 @@ class RabbitmqPublishThread(threading.Thread):
         while True:
             message = self.rabbitmq_publish_thread_queue.get()
             try:
-                logging.debug(message_debug(909, threading.current_thread().name, self.rabbitmq_publish_thread_rabbitmq_queue_name, message))
+                logging.debug(message_debug(916, threading.current_thread().name, self.rabbitmq_publish_thread_rabbitmq_queue_name, message))
                 self.channel.basic_publish(
                     exchange='',
                     routing_key=self.rabbitmq_publish_thread_rabbitmq_queue_name,
@@ -1264,6 +1265,13 @@ class RabbitmqSubscribeThread(threading.Thread):
         threading.Thread.__init__(self)
         logging.debug(message_debug(997, threading.current_thread().name, "RabbitmqSubscribeThread"))
 
+        logging.debug(message_debug(912,
+            threading.current_thread().name,
+            host,
+            queue_name,
+            username,
+            prefetch_count))
+
         self.internal_queue = internal_queue
         self.queue_name = queue_name
 
@@ -1281,7 +1289,7 @@ class RabbitmqSubscribeThread(threading.Thread):
         '''
         Put message into internal queue.
         '''
-        logging.debug(message_debug(910, threading.current_thread().name, self.queue_name, message))
+        logging.debug(message_debug(917, threading.current_thread().name, self.queue_name, message))
         if type(message) == bytes:
             message = message.decode()
         assert type(message) == str
@@ -1327,7 +1335,7 @@ class xRabbitmqSubscribeThread(threading.Thread):
         Read from RabbitMQ and put into an internal queue.
         '''
         message = body.decode()
-        logging.debug(message_debug(910, threading.current_thread().name, self.rabbitmq_subscribe_thread_rabbitmq_queue_name, message))
+        logging.debug(message_debug(917, threading.current_thread().name, self.rabbitmq_subscribe_thread_rabbitmq_queue_name, message))
         self.rabbitmq_subscribe_thread_queue.put(message)
         channel.basic_ack(delivery_tag=method.delivery_tag)
 
@@ -1470,7 +1478,7 @@ class InputInternalMixin():
 
         while True:
             message = self.redo_queue.get()
-            logging.debug(message_debug(903, threading.current_thread().name, message))
+            logging.debug(message_debug(918, threading.current_thread().name, message))
             self.config['received_from_redo_queue'] += 1
             assert type(message) == str
             yield message
@@ -1529,7 +1537,7 @@ class InputKafkaMixin():
 
             # As a generator, give the value to the co-routine.
 
-            logging.debug(message_debug(903, threading.current_thread().name, message))
+            logging.debug(message_debug(918, threading.current_thread().name, message))
             assert type(message) == str
             yield message
 
@@ -1584,12 +1592,10 @@ class InputRabbitmqMixin():
         '''
 
         while True:
-            logging.debug(message_debug(999, "MJD-05 >>>>>>>>>>>>>>>>>>"))
-
             message = str(self.input_rabbitmq_mixin_queue.get())
             assert type(message) == str
             self.config['received_from_redo_queue'] += 1
-            logging.debug(message_debug(903, threading.current_thread().name, message))
+            logging.debug(message_debug(918, threading.current_thread().name, message))
             yield message
 
 # =============================================================================
@@ -1620,12 +1626,14 @@ class ExecuteMixin():
         The method can be sub-classed to call other G2Engine methods.
         '''
 
-        logging.debug(message_debug(905, threading.current_thread().name, redo_record))
+        logging.debug(message_debug(919, threading.current_thread().name, redo_record))
         assert type(redo_record) == str
 
         try:
             self.g2_engine.process(redo_record)
             self.config['processed_redo_records'] += 1
+            logging.debug(message_debug(910, threading.current_thread().name, redo_record))
+
         except G2Exception.G2ModuleNotInitialized as err:
             exit_error(707, threading.current_thread().name, err, redo_record)
         except Exception as err:
@@ -1634,6 +1642,7 @@ class ExecuteMixin():
                 logging.debug(message_debug(906, threading.current_thread().name, redo_record))
                 self.g2_engine.process(redo_record)
                 self.config['processed_redo_records'] += 1
+                logging.debug(message_debug(910, threading.current_thread().name, redo_record))
             else:
                 exit_error(709, threading.current_thread().name, err)
 
@@ -1654,7 +1663,7 @@ class ExecuteWithInfoMixin():
         This method uses G2Engine.processWithInfo()
         '''
 
-        logging.debug(message_debug(905, threading.current_thread().name, redo_record))
+        logging.debug(message_debug(919, threading.current_thread().name, redo_record))
         assert type(redo_record) == str
 
         # Additional parameters for processWithInfo().
@@ -1664,6 +1673,7 @@ class ExecuteWithInfoMixin():
         try:
             self.g2_engine.processWithInfo(redo_record, info_bytearray, self.g2_engine_flags)
             self.config['processed_redo_records'] += 1
+            logging.debug(message_debug(911, threading.current_thread().name, redo_record, info_bytearray))
         except G2Exception.G2ModuleNotInitialized as err:
             self.send_to_failure_queue(redo_record)
             exit_error(707, threading.current_thread().name, err, info_bytearray.decode())
@@ -1673,6 +1683,7 @@ class ExecuteWithInfoMixin():
                 logging.debug(message_debug(906, threading.current_thread().name, redo_record))
                 self.g2_engine.processWithInfo(redo_record, info_bytearray, self.g2_engine_flags)
                 self.config['processed_redo_records'] += 1
+                logging.debug(message_debug(911, threading.current_thread().name, redo_record, info_bytearray))
             else:
                 self.send_to_failure_queue(redo_record)
                 exit_error(709, threading.current_thread().name, err)
@@ -1711,7 +1722,7 @@ class ExecuteWriteToRabbitmqMixin():
         Simply send to RabbitMQ.
         '''
 
-        logging.debug(message_debug(905, threading.current_thread().name, redo_record))
+        logging.debug(message_debug(919, threading.current_thread().name, redo_record))
         assert type(redo_record) == str
         self.execute_write_to_rabbitmq_mixin_rabbitmq.send(redo_record)
         self.config['sent_to_redo_queue'] += 1
@@ -1750,7 +1761,7 @@ class ExecuteWriteToKafkaMixin():
         Simply send to Kafka.
         '''
 
-        logging.debug(message_debug(909, threading.current_thread().name, self.kafka_redo_topic, redo_record))
+        logging.debug(message_debug(916, threading.current_thread().name, self.kafka_redo_topic, redo_record))
         assert type(redo_record) == str
 
         try:
@@ -1834,7 +1845,7 @@ class OutputKafkaMixin():
     def send_to_failure_queue(self, message):
         assert type(message) == str
         try:
-            logging.debug(message_debug(909, threading.current_thread().name, self.kafka_failure_topic, message))
+            logging.debug(message_debug(916, threading.current_thread().name, self.kafka_failure_topic, message))
             self.kafka_failure_producer.produce(self.kafka_failure_topic, message, on_delivery=self.on_kafka_delivery)
             self.config['sent_to_failure_queue'] += 1
         except BufferError as err:
@@ -1849,7 +1860,7 @@ class OutputKafkaMixin():
     def send_to_info_queue(self, message):
         assert type(message) == str
         try:
-            logging.debug(message_debug(909, threading.current_thread().name, self.kafka_info_topic, message))
+            logging.debug(message_debug(916, threading.current_thread().name, self.kafka_info_topic, message))
             self.kafka_info_producer.produce(self.kafka_info_topic, message, on_delivery=self.on_kafka_delivery)
             self.config['sent_to_info_queue'] += 1
         except BufferError as err:
