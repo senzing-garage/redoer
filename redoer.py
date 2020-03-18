@@ -149,6 +149,11 @@ configuration_locator = {
         "env": "SENZING_QUEUE_MAX_SIZE",
         "cli": "queue-max-size"
     },
+    "rabbitmq_delivery_mode": {
+        "default": 1,
+        "env": "SENZING_RABBITMQ_DELIVERY_MODE",
+        "cli": "rabbitmq-delivery-mode",
+    },
     "rabbitmq_failure_host": {
         "default": None,
         "env": "SENZING_RABBITMQ_FAILURE_HOST",
@@ -1118,17 +1123,46 @@ class Rabbitmq:
     https://github.com/pika/pika/issues/1104
     '''
 
-    def __init__(self, username, password, host):
+    def __init__(self,
+            username,
+            password,
+            host,
+            queue_name,
+            exchange='',
+            delivery_mode=2,
+            prefetch_count=1,
+        ):
+
         logging.debug(message_debug(995, threading.current_thread().name, "Rabbitmq"))
-        credentials = pika.PlainCredentials(username=username, password=password)
-        connection_parameters = pika.ConnectionParameters(credentials=credentials, host=host, heartbeat=0)
+
+        self.delivery_mode = delivery_mode
+        self.exchange = exchange
+        self.queue_name = queue_name
+
+        credentials = pika.PlainCredentials(
+            username=username,
+            password=password,
+        )
+        connection_parameters = pika.ConnectionParameters(
+            credentials=credentials,
+            host=host,
+            heartbeat=0,
+        )
+
         self.connection = pika.BlockingConnection(connection_parameters)
         self.channel = self.connection.channel()
-        self.channel.basic_qos(prefetch_count=1)
+        self.channel.queue_declare(
+            queue=self.queue_name
+        )
+        self.channel.basic_qos(
+            prefetch_count=prefetch_count,
+        )
 
-    def receive(self, queue_name, callback=None):
+    def receive(self, callback=None):
 
-        def local_callback(ch, method, properties, body):
+        def on_message_callback(channel, method, properties, body):
+            logging.debug(message_debug(910, threading.current_thread().name, self.queue_name, body))
+
             if callback is not None:
                 my_thread = threading.Thread(target=callback, args=(body,))
                 my_thread.daemon = True
@@ -1138,21 +1172,27 @@ class Rabbitmq:
                     self.connection.process_data_events()
                     self.connection.sleep(5)
 
-            ch.basic_ack(delivery_tag=method.delivery_tag)
+            channel.basic_ack(delivery_tag=method.delivery_tag)
 
-        self.channel.basic_consume(local_callback, queue_name)
+        self.channel.basic_consume(
+            queue=self.queue_name,
+            on_message_callback=on_message_callback,
+        )
         self.channel.start_consuming()
 
-    def send(self, message, routing_key, exchange='', delivery_mode=2, priority=None):
-        self.channel.basic_publish(
-            exchange=exchange,
-            routing_key=routing_key,
-            body=message,
-            properties=pika.BasicProperties(
-                delivery_mode=delivery_mode,
-                priority=priority,
-            ),
-        )
+    def send(self, message):
+        logging.debug(message_debug(909, threading.current_thread().name, self.queue_name, message))
+        try:
+            self.channel.basic_publish(
+                exchange=self.exchange,
+                routing_key=self.queue_name,
+                body=message,
+                properties=pika.BasicProperties(
+                    delivery_mode=self.delivery_mode,
+                ),
+            )
+        except BaseException as err:
+            logging.warning(message_warning(411, threading.current_thread().name, self.queue_name, err, message))
 
     def close(self):
         self.connection.close()
@@ -1202,7 +1242,7 @@ class RabbitmqPublishThread(threading.Thread):
                 logging.warning(message_warning(411, threading.current_thread().name, self.rabbitmq_publish_thread_rabbitmq_queue_name, err, message))
 
 
-class RabbitmqSubscribeThread(threading.Thread):
+class xRabbitmqSubscribeThread(threading.Thread):
 
     def __init__(self, internal_queue, rabbitmq_host, rabbitmq_queue_name, rabbitmq_username, rabbitmq_password, rabbitmq_prefetch_count):
         threading.Thread.__init__(self)
@@ -1463,32 +1503,29 @@ class InputRabbitmqMixin():
     def __init__(self, *args, **kwargs):
         logging.debug(message_debug(996, threading.current_thread().name, "InputRabbitmqMixin"))
 
-        self.input_rabbitmq_mixin_queue = multiprocessing.Queue(2)
+        # Create qn internal queue for this mixin.
 
-        threads = []
+        self.input_rabbitmq_mixin_queue = multiprocessing.Queue()
 
-        # Create thread for redo queue.
+        # Connect to RabbitMQ.
 
-        redo_thread = RabbitmqSubscribeThread(
-            self.input_rabbitmq_mixin_queue,
-            self.config.get("rabbitmq_redo_host"),
-            self.config.get("rabbitmq_redo_queue"),
-            self.config.get("rabbitmq_redo_username"),
-            self.config.get("rabbitmq_redo_password"),
-            self.config.get("rabbitmq_prefetch_count")
+        self.input_rabbitmq_mixin_rabbitmq = Rabbitmq(
+            username=self.config.get("rabbitmq_redo_username"),
+            password=self.config.get("rabbitmq_redo_password"),
+            host=self.config.get("rabbitmq_redo_host"),
+            queue_name=self.config.get("rabbitmq_redo_queue"),
+            prefetch_count=self.config.get("rabbitmq_prefetch_count")
         )
-        redo_thread.name = "{0}-{1}".format(threading.current_thread().name, "redo")
-        threads.append(redo_thread)
+        self.input_rabbitmq_mixin_rabbitmq.receive(callback=self.callback)
 
-        # Start threads.
-
-        for thread in threads:
-            thread.start()
+    def callback(self, message):
+        '''Receive messages from RabbitMQ and put into local queue for use by Generator.'''
+        self.input_rabbitmq_mixin_queue.put(message)
 
     def redo_records(self):
         '''
         Generator that produces Senzing redo records.
-        This method reads from a very small "internal queue"
+        This method reads from an internal queue
         populated by the RabbitMQ callback() method.
         '''
 
@@ -1605,31 +1642,11 @@ class ExecuteWriteToRabbitmqMixin():
     def __init__(self, *args, **kwargs):
         logging.debug(message_debug(996, threading.current_thread().name, "ExecuteWriteToRabbitmqMixin"))
 
-#         self.execute_write_to_rabbitmq_mixin_queue = multiprocessing.Queue()
-#
-#         threads = []
-#
-#         # Create thread for redo queue.
-#
-#         redo_thread = RabbitmqPublishThread(
-#             self.execute_write_to_rabbitmq_mixin_queue,
-#             self.config.get("rabbitmq_redo_host"),
-#             self.config.get("rabbitmq_redo_queue"),
-#             self.config.get("rabbitmq_redo_username"),
-#             self.config.get("rabbitmq_redo_password")
-#         )
-#         redo_thread.name = "{0}-{1}".format(threading.current_thread().name, "redo")
-#         threads.append(redo_thread)
-#
-#         # Start threads.
-#
-#         for thread in threads:
-#             thread.start()
-
-        self.rabbitmq = Rabbitmq(
-            self.config.get("rabbitmq_redo_username"),
-            self.config.get("rabbitmq_redo_password"),
-            self.config.get("rabbitmq_redo_host")
+        self.execute_write_to_rabbitmq_mixin_rabbitmq = Rabbitmq(
+            username=self.config.get("rabbitmq_redo_username"),
+            password=self.config.get("rabbitmq_redo_password"),
+            host=self.config.get("rabbitmq_redo_host"),
+            queue_name=self.config.get("rabbitmq_redo_queue"),
         )
 
     def process_redo_record(self, redo_record=None):
@@ -1640,12 +1657,7 @@ class ExecuteWriteToRabbitmqMixin():
 
         logging.debug(message_debug(905, threading.current_thread().name, redo_record))
         assert type(redo_record) == str
-#       self.execute_write_to_rabbitmq_mixin_queue.put(redo_record)
-
-        self.rabbitmq.send(
-            redo_record,
-            self.config.get("rabbitmq_redo_queue")
-        )
+        self.execute_write_to_rabbitmq_mixin_rabbitmq.send(redo_record)
         self.config['sent_to_redo_queue'] += 1
 
 # -----------------------------------------------------------------------------
