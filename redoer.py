@@ -41,7 +41,7 @@ except ImportError:
 __all__ = []
 __version__ = "1.1.0"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2020-03-17'
+__updated__ = '2020-03-18'
 
 # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 SENZING_PRODUCT_ID = "5010"
@@ -768,6 +768,7 @@ message_dictionary = {
     "910": "Thread: {0} Queue: {1} Subscribe Message: {2}",
     "912": "RabbitmqSubscribeThread: {0} Host: {1} Queue-name: {2} Username: {3}  Prefetch-count: {4}",
     "913": "RabbitmqPublishThread: {0} Host: {1} Queue-name: {2} Username: {3}",
+    "995": "Thread: {0} Using Class: {1}",
     "996": "Thread: {0} Using Mixin: {1}",
     "997": "Thread: {0} Using Thread: {1}",
     "998": "Debugging enabled.",
@@ -1112,6 +1113,51 @@ class InfoFilter:
 # -----------------------------------------------------------------------------
 
 
+class Rabbitmq:
+    '''
+    https://github.com/pika/pika/issues/1104
+    '''
+
+    def __init__(self, username, password, host):
+        logging.debug(message_debug(995, threading.current_thread().name, "Rabbitmq"))
+        credentials = pika.PlainCredentials(username=username, password=password)
+        connection_parameters = pika.ConnectionParameters(credentials=credentials, host=host, heartbeat=0)
+        self.connection = pika.BlockingConnection(connection_parameters)
+        self.channel = self.connection.channel()
+        self.channel.basic_qos(prefetch_count=1)
+
+    def receive(self, queue_name, callback=None):
+
+        def local_callback(ch, method, properties, body):
+            if callback is not None:
+                my_thread = threading.Thread(target=callback, args=(body,))
+                my_thread.daemon = True
+                my_thread.start()
+
+                while my_thread.is_alive():
+                    self.connection.process_data_events()
+                    self.connection.sleep(5)
+
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+
+        self.channel.basic_consume(local_callback, queue_name)
+        self.channel.start_consuming()
+
+    def send(self, message, routing_key, exchange='', delivery_mode=2, priority=None):
+        self.channel.basic_publish(
+            exchange=exchange,
+            routing_key=routing_key,
+            body=message,
+            properties=pika.BasicProperties(
+                delivery_mode=delivery_mode,
+                priority=priority,
+            ),
+        )
+
+    def close(self):
+        self.connection.close()
+
+
 class RabbitmqPublishThread(threading.Thread):
 
     def __init__(self, internal_queue, rabbitmq_host, rabbitmq_queue_name, rabbitmq_username, rabbitmq_password):
@@ -1129,10 +1175,10 @@ class RabbitmqPublishThread(threading.Thread):
         # Create RabbitMQ connection.
 
         try:
-            credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
-            parameters = pika.ConnectionParameters(host=rabbitmq_host, credentials=credentials, heartbeat=5)
-            connection = pika.BlockingConnection(parameters)
-            self.channel = connection.channel()
+            self.credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
+            self.parameters = pika.ConnectionParameters(host=rabbitmq_host, credentials=self.credentials, heartbeat=120)
+            self.connection = pika.BlockingConnection(self.parameters)
+            self.channel = self.connection.channel()
             self.channel.queue_declare(queue=rabbitmq_queue_name)
         except (pika.exceptions.AMQPConnectionError) as err:
             exit_error(412, threading.current_thread().name, rabbitmq_queue_name, err, rabbitmq_host)
@@ -1559,26 +1605,32 @@ class ExecuteWriteToRabbitmqMixin():
     def __init__(self, *args, **kwargs):
         logging.debug(message_debug(996, threading.current_thread().name, "ExecuteWriteToRabbitmqMixin"))
 
-        self.execute_write_to_rabbitmq_mixin_queue = multiprocessing.Queue()
+#         self.execute_write_to_rabbitmq_mixin_queue = multiprocessing.Queue()
+#
+#         threads = []
+#
+#         # Create thread for redo queue.
+#
+#         redo_thread = RabbitmqPublishThread(
+#             self.execute_write_to_rabbitmq_mixin_queue,
+#             self.config.get("rabbitmq_redo_host"),
+#             self.config.get("rabbitmq_redo_queue"),
+#             self.config.get("rabbitmq_redo_username"),
+#             self.config.get("rabbitmq_redo_password")
+#         )
+#         redo_thread.name = "{0}-{1}".format(threading.current_thread().name, "redo")
+#         threads.append(redo_thread)
+#
+#         # Start threads.
+#
+#         for thread in threads:
+#             thread.start()
 
-        threads = []
-
-        # Create thread for redo queue.
-
-        redo_thread = RabbitmqPublishThread(
-            self.execute_write_to_rabbitmq_mixin_queue,
-            self.config.get("rabbitmq_redo_host"),
-            self.config.get("rabbitmq_redo_queue"),
+        self.rabbitmq = Rabbitmq(
             self.config.get("rabbitmq_redo_username"),
-            self.config.get("rabbitmq_redo_password")
+            self.config.get("rabbitmq_redo_password"),
+            self.config.get("rabbitmq_redo_host")
         )
-        redo_thread.name = "{0}-{1}".format(threading.current_thread().name, "redo")
-        threads.append(redo_thread)
-
-        # Start threads.
-
-        for thread in threads:
-            thread.start()
 
     def process_redo_record(self, redo_record=None):
         '''
@@ -1588,7 +1640,12 @@ class ExecuteWriteToRabbitmqMixin():
 
         logging.debug(message_debug(905, threading.current_thread().name, redo_record))
         assert type(redo_record) == str
-        self.execute_write_to_rabbitmq_mixin_queue.put(redo_record)
+#       self.execute_write_to_rabbitmq_mixin_queue.put(redo_record)
+
+        self.rabbitmq.send(
+            redo_record,
+            self.config.get("rabbitmq_redo_queue")
+        )
         self.config['sent_to_redo_queue'] += 1
 
 # -----------------------------------------------------------------------------
