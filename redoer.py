@@ -728,6 +728,7 @@ message_dictionary = {
     "410": "Thread: {0} RabbitMQ queue: {1} Unknown RabbitMQ error when connecting: {2}.",
     "411": "Thread: {0} RabbitMQ queue: {1} Unknown RabbitMQ error: {2} Message: {3}",
     "412": "Thread: {0} RabbitMQ queue: {1} AMQPConnectionError: {2} Could not connect to RabbitMQ host at {3}. The host name maybe wrong, it may not be ready, or your credentials are incorrect. See the RabbitMQ log for more details.",
+    "413": "Thread: {0} RabbitMQ queue: {1} Unknown RabbitMQ error: {2}",
     "499": "{0}",
     "500": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}E",
     "561": "Thread: {0} Unknown RabbitMQ error when connecting: {1}",
@@ -1139,24 +1140,31 @@ class Rabbitmq:
         self.exchange = exchange
         self.queue_name = queue_name
 
-        credentials = pika.PlainCredentials(
-            username=username,
-            password=password,
-        )
-        connection_parameters = pika.ConnectionParameters(
-            credentials=credentials,
-            host=host,
-            heartbeat=0,
-        )
+        try:
 
-        self.connection = pika.BlockingConnection(connection_parameters)
-        self.channel = self.connection.channel()
-        self.channel.queue_declare(
-            queue=self.queue_name
-        )
-        self.channel.basic_qos(
-            prefetch_count=prefetch_count,
-        )
+            credentials = pika.PlainCredentials(
+                username=username,
+                password=password,
+            )
+            connection_parameters = pika.ConnectionParameters(
+                credentials=credentials,
+                host=host,
+                heartbeat=0,
+            )
+
+            self.connection = pika.BlockingConnection(connection_parameters)
+            self.channel = self.connection.channel()
+            self.channel.queue_declare(
+                queue=self.queue_name
+            )
+            self.channel.basic_qos(
+                prefetch_count=prefetch_count,
+            )
+
+        except pika.exceptions.AMQPConnectionError as err:
+            exit_error(562, threading.current_thread().name, err, host)
+        except BaseException as err:
+            exit_error(561, threading.current_thread().name, err)
 
     def receive(self, callback=None):
 
@@ -1178,7 +1186,12 @@ class Rabbitmq:
             queue=self.queue_name,
             on_message_callback=on_message_callback,
         )
-        self.channel.start_consuming()
+        try:
+            self.channel.start_consuming()
+        except pika.exceptions.ChannelClosed:
+            logging.info(message_info(130, threading.current_thread().name))
+        except BaseException as err:
+            logging.warning(message_warning(413, threading.current_thread().name, self.queue_name, err))
 
     def send(self, message):
         logging.debug(message_debug(909, threading.current_thread().name, self.queue_name, message))
@@ -1240,6 +1253,42 @@ class RabbitmqPublishThread(threading.Thread):
                 )
             except BaseException as err:
                 logging.warning(message_warning(411, threading.current_thread().name, self.rabbitmq_publish_thread_rabbitmq_queue_name, err, message))
+
+
+class RabbitmqSubscribeThread(threading.Thread):
+    '''
+    Wrap RabbitMQ behind a Python Queue.
+    '''
+
+    def __init__(self, internal_queue, host, queue_name, username, password, prefetch_count):
+        threading.Thread.__init__(self)
+        logging.debug(message_debug(997, threading.current_thread().name, "RabbitmqSubscribeThread"))
+
+        self.internal_queue = internal_queue
+        self.queue_name = queue_name
+
+        # Connect to RabbitMQ.
+
+        self.input_rabbitmq_mixin_rabbitmq = Rabbitmq(
+            username=username,
+            password=password,
+            host=host,
+            queue_name=queue_name,
+            prefetch_count=prefetch_count
+        )
+
+    def callback(self, message):
+        '''
+        Put message into internal queue.
+        '''
+        logging.debug(message_debug(910, threading.current_thread().name, self.queue_name, message))
+        if type(message) == bytes:
+            message = message.decode()
+        assert type(message) == str
+        self.internal_queue.put(message)
+
+    def run(self):
+        self.input_rabbitmq_mixin_rabbitmq.receive(self.callback)
 
 
 class xRabbitmqSubscribeThread(threading.Thread):
@@ -1507,20 +1556,25 @@ class InputRabbitmqMixin():
 
         self.input_rabbitmq_mixin_queue = multiprocessing.Queue()
 
-        # Connect to RabbitMQ.
+        threads = []
 
-        self.input_rabbitmq_mixin_rabbitmq = Rabbitmq(
-            username=self.config.get("rabbitmq_redo_username"),
-            password=self.config.get("rabbitmq_redo_password"),
-            host=self.config.get("rabbitmq_redo_host"),
-            queue_name=self.config.get("rabbitmq_redo_queue"),
-            prefetch_count=self.config.get("rabbitmq_prefetch_count")
+        # Create thread for redo queue.
+
+        redo_thread = RabbitmqSubscribeThread(
+            self.input_rabbitmq_mixin_queue,
+            self.config.get("rabbitmq_redo_host"),
+            self.config.get("rabbitmq_redo_queue"),
+            self.config.get("rabbitmq_redo_username"),
+            self.config.get("rabbitmq_redo_password"),
+            self.config.get("rabbitmq_prefetch_count")
         )
-        self.input_rabbitmq_mixin_rabbitmq.receive(callback=self.callback)
+        redo_thread.name = "{0}-{1}".format(threading.current_thread().name, "redo")
+        threads.append(redo_thread)
 
-    def callback(self, message):
-        '''Receive messages from RabbitMQ and put into local queue for use by Generator.'''
-        self.input_rabbitmq_mixin_queue.put(message)
+        # Start threads.
+
+        for thread in threads:
+            thread.start()
 
     def redo_records(self):
         '''
@@ -1530,6 +1584,8 @@ class InputRabbitmqMixin():
         '''
 
         while True:
+            logging.debug(message_debug(999, "MJD-05 >>>>>>>>>>>>>>>>>>"))
+
             message = str(self.input_rabbitmq_mixin_queue.get())
             assert type(message) == str
             self.config['received_from_redo_queue'] += 1
