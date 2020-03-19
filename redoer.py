@@ -1141,6 +1141,8 @@ class Rabbitmq:
         self.exchange = exchange
         self.queue_name = queue_name
 
+        # Create a RabbitMQ connection and channel.
+
         try:
 
             credentials = pika.PlainCredentials(
