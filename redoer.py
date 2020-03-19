@@ -39,7 +39,7 @@ except ImportError:
     pass
 
 __all__ = []
-__version__ = "1.1.0"  # See https://www.python.org/dev/peps/pep-0396/
+__version__ = "1.3.0"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
 __updated__ = '2020-03-18'
 
@@ -718,7 +718,6 @@ message_dictionary = {
     "298": "Exit {0}",
     "299": "{0}",
     "300": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}W",
-
     "404": "Thread: {0} Kafka topic: {1} BufferError: {2} Message: {3}",
     "405": "Thread: {0} Kafka topic: {1} KafkaException: {2} Message: {3}",
     "406": "Thread: {0} Kafka topic: {1} NotImplemented: {2} Message: {3}",
@@ -770,7 +769,6 @@ message_dictionary = {
     "910": "Thread: {0} g2_engine.process() redo_record: {1}",
     "911": "Thread: {0} g2_engine.processWithInfo() return_code: {0} redo_record: {1} withInfo: {2}",
     "912": "RabbitmqSubscribeThread: {0} Host: {1} Queue-name: {2} Username: {3}  Prefetch-count: {4}",
-    "913": "RabbitmqPublishThread: {0} Host: {1} Queue-name: {2} Username: {3}",
     "916": "Thread: {0} Queue: {1} Publish Message: {2}",
     "917": "Thread: {0} Queue: {1} Subscribe Message: {2}",
     "918": "Thread: {0} redo_records() -> {1}",
@@ -1212,50 +1210,6 @@ class Rabbitmq:
 
     def close(self):
         self.connection.close()
-
-
-class xRabbitmqPublishThread(threading.Thread):
-
-    def __init__(self, internal_queue, rabbitmq_host, rabbitmq_queue_name, rabbitmq_username, rabbitmq_password):
-        threading.Thread.__init__(self)
-        logging.debug(message_debug(997, threading.current_thread().name, "RabbitmqPublishThread"))
-        self.rabbitmq_publish_thread_queue = internal_queue
-        self.rabbitmq_publish_thread_rabbitmq_queue_name = rabbitmq_queue_name
-
-        logging.debug(message_debug(913,
-            threading.current_thread().name,
-            rabbitmq_host,
-            rabbitmq_queue_name,
-            rabbitmq_username))
-
-        # Create RabbitMQ connection.
-
-        try:
-            self.credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
-            self.parameters = pika.ConnectionParameters(host=rabbitmq_host, credentials=self.credentials, heartbeat=120)
-            self.connection = pika.BlockingConnection(self.parameters)
-            self.channel = self.connection.channel()
-            self.channel.queue_declare(queue=rabbitmq_queue_name)
-        except (pika.exceptions.AMQPConnectionError) as err:
-            exit_error(412, threading.current_thread().name, rabbitmq_queue_name, err, rabbitmq_host)
-        except BaseException as err:
-            exit_error(410, threading.current_thread().name, rabbitmq_queue_name, err)
-
-    def run(self):
-        while True:
-            message = self.rabbitmq_publish_thread_queue.get()
-            try:
-                logging.debug(message_debug(916, threading.current_thread().name, self.rabbitmq_publish_thread_rabbitmq_queue_name, message))
-                self.channel.basic_publish(
-                    exchange='',
-                    routing_key=self.rabbitmq_publish_thread_rabbitmq_queue_name,
-                    body=message,
-                    properties=pika.BasicProperties(
-                        delivery_mode=1  # Make message non-persistent
-                    )
-                )
-            except BaseException as err:
-                logging.warning(message_warning(411, threading.current_thread().name, self.rabbitmq_publish_thread_rabbitmq_queue_name, err, message))
 
 
 class RabbitmqSubscribeThread(threading.Thread):
@@ -1859,56 +1813,6 @@ class OutputRabbitmqMixin():
     def send_to_info_queue(self, message):
         assert type(message) == str
         self.output_rabbitmq_mixin_info_rabbitmq.send(message)
-        self.config['sent_to_info_queue'] += 1
-
-
-class xOutputRabbitmqMixin():
-
-    def __init__(self, *args, **kwargs):
-        logging.debug(message_debug(996, threading.current_thread().name, "OutputRabbitmqMixin"))
-
-        self.output_rabbitmq_mixin_failure_queue = multiprocessing.Queue()
-        self.output_rabbitmq_mixin_info_queue = multiprocessing.Queue()
-
-        threads = []
-
-        # Create thread for info queue.
-
-        info_thread = RabbitmqPublishThread(
-            self.output_rabbitmq_mixin_info_queue,
-            self.config.get("rabbitmq_info_host"),
-            self.config.get("rabbitmq_info_queue"),
-            self.config.get("rabbitmq_info_username"),
-            self.config.get("rabbitmq_info_password")
-        )
-        info_thread.name = "{0}-{1}".format(threading.current_thread().name, "info")
-        threads.append(info_thread)
-
-        # Create thread for failure queue.
-
-        failure_thread = RabbitmqPublishThread(
-            self.output_rabbitmq_mixin_failure_queue,
-            self.config.get("rabbitmq_failure_host"),
-            self.config.get("rabbitmq_failure_queue"),
-            self.config.get("rabbitmq_failure_username"),
-            self.config.get("rabbitmq_failure_password")
-        )
-        failure_thread.name = "{0}-{1}".format(threading.current_thread().name, "failure")
-        threads.append(failure_thread)
-
-        # Start threads.
-
-        for thread in threads:
-            thread.start()
-
-    def send_to_failure_queue(self, message):
-        assert type(message) == str
-        self.output_rabbitmq_mixin_failure_queue.put(message)
-        self.config['sent_to_failure_queue'] += 1
-
-    def send_to_info_queue(self, message):
-        assert type(message) == str
-        self.output_rabbitmq_mixin_info_queue.put(message)
         self.config['sent_to_info_queue'] += 1
 
 # =============================================================================
