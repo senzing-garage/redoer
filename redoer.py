@@ -1214,7 +1214,7 @@ class Rabbitmq:
         self.connection.close()
 
 
-class RabbitmqPublishThread(threading.Thread):
+class xRabbitmqPublishThread(threading.Thread):
 
     def __init__(self, internal_queue, rabbitmq_host, rabbitmq_queue_name, rabbitmq_username, rabbitmq_password):
         threading.Thread.__init__(self)
@@ -1299,53 +1299,6 @@ class RabbitmqSubscribeThread(threading.Thread):
 
     def run(self):
         self.input_rabbitmq_mixin_rabbitmq.receive(self.callback)
-
-
-class xRabbitmqSubscribeThread(threading.Thread):
-
-    def __init__(self, internal_queue, rabbitmq_host, rabbitmq_queue_name, rabbitmq_username, rabbitmq_password, rabbitmq_prefetch_count):
-        threading.Thread.__init__(self)
-        logging.debug(message_debug(997, threading.current_thread().name, "RabbitmqSubscribeThread"))
-
-        logging.debug(message_debug(912,
-            threading.current_thread().name,
-            rabbitmq_host,
-            rabbitmq_queue_name,
-            rabbitmq_username,
-            rabbitmq_prefetch_count))
-
-        self.rabbitmq_subscribe_thread_queue = internal_queue
-        self.rabbitmq_subscribe_thread_rabbitmq_queue_name = rabbitmq_queue_name
-
-        # Create RabbitMQ connection.
-
-        try:
-            credentials = pika.PlainCredentials(rabbitmq_username, rabbitmq_password)
-            connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host, credentials=credentials))
-            self.channel = connection.channel()
-            self.channel.queue_declare(queue=rabbitmq_queue_name)
-            self.channel.basic_qos(prefetch_count=rabbitmq_prefetch_count)
-            self.channel.basic_consume(on_message_callback=self.callback, queue=rabbitmq_queue_name)
-        except pika.exceptions.AMQPConnectionError as err:
-            exit_error(562, threading.current_thread().name, err, rabbitmq_host)
-        except BaseException as err:
-            exit_error(561, threading.current_thread().name, err)
-
-    def callback(self, channel, method, header, body):
-        '''
-        Called by Pika whenever a message is received.
-        Read from RabbitMQ and put into an internal queue.
-        '''
-        message = body.decode()
-        logging.debug(message_debug(917, threading.current_thread().name, self.rabbitmq_subscribe_thread_rabbitmq_queue_name, message))
-        self.rabbitmq_subscribe_thread_queue.put(message)
-        channel.basic_ack(delivery_tag=method.delivery_tag)
-
-    def run(self):
-        try:
-            self.channel.start_consuming()
-        except pika.exceptions.ChannelClosed:
-            logging.info(message_info(130, threading.current_thread().name))
 
 # -----------------------------------------------------------------------------
 # Class: MonitorThread
@@ -1880,6 +1833,36 @@ class OutputKafkaMixin():
 
 
 class OutputRabbitmqMixin():
+
+    def __init__(self, *args, **kwargs):
+        logging.debug(message_debug(996, threading.current_thread().name, "OutputRabbitmqMixin"))
+
+        self.output_rabbitmq_mixin_info_rabbitmq = Rabbitmq(
+            username=self.config.get("rabbitmq_info_username"),
+            password=self.config.get("rabbitmq_info_password"),
+            host=self.config.get("rabbitmq_info_host"),
+            queue_name=self.config.get("rabbitmq_info_queue"),
+        )
+
+        self.output_rabbitmq_mixin_failure_rabbitmq = Rabbitmq(
+            username=self.config.get("rabbitmq_failure_username"),
+            password=self.config.get("rabbitmq_failure_password"),
+            host=self.config.get("rabbitmq_failure_host"),
+            queue_name=self.config.get("rabbitmq_failure_queue"),
+        )
+
+    def send_to_failure_queue(self, message):
+        assert type(message) == str
+        self.output_rabbitmq_mixin_failure_rabbitmq.send(message)
+        self.config['sent_to_failure_queue'] += 1
+
+    def send_to_info_queue(self, message):
+        assert type(message) == str
+        self.output_rabbitmq_mixin_info_rabbitmq.send(message)
+        self.config['sent_to_info_queue'] += 1
+
+
+class xOutputRabbitmqMixin():
 
     def __init__(self, *args, **kwargs):
         logging.debug(message_debug(996, threading.current_thread().name, "OutputRabbitmqMixin"))
