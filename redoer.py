@@ -41,7 +41,7 @@ except ImportError:
 __all__ = []
 __version__ = "1.3.0"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2020-03-18'
+__updated__ = '2020-03-19'
 
 # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 SENZING_PRODUCT_ID = "5010"
@@ -1135,6 +1135,18 @@ class Rabbitmq:
 
         logging.debug(message_debug(995, threading.current_thread().name, "Rabbitmq"))
 
+        # Check input parameter data types.
+
+        assert type(username) == str
+        assert type(password) == str
+        assert type(host) == str
+        assert type(queue_name) == str
+        assert type(exchange) == str
+        assert type(delivery_mode) == int
+        assert type(prefetch_count) == int
+
+        # Instance variables.
+
         self.delivery_mode = delivery_mode
         self.exchange = exchange
         self.queue_name = queue_name
@@ -1196,11 +1208,13 @@ class Rabbitmq:
 
     def send(self, message):
         logging.debug(message_debug(916, threading.current_thread().name, self.queue_name, message))
+        assert type(message) == str
+        message_bytes = message.encode()
         try:
             self.channel.basic_publish(
                 exchange=self.exchange,
                 routing_key=self.queue_name,
-                body=message,
+                body=message_bytes,
                 properties=pika.BasicProperties(
                     delivery_mode=self.delivery_mode,
                 ),
@@ -1260,6 +1274,9 @@ class RabbitmqSubscribeThread(threading.Thread):
 
 
 class MonitorThread(threading.Thread):
+    '''
+    Periodically log operational metrics.
+    '''
 
     def __init__(self, config=None, g2_engine=None, workers=None):
         threading.Thread.__init__(self)
@@ -1538,6 +1555,8 @@ class ExecuteMixin():
         logging.debug(message_debug(919, threading.current_thread().name, redo_record))
         assert type(redo_record) == str
 
+        # Call g2_engine.process() and handle "edge" cases.
+
         try:
             self.g2_engine.process(redo_record)
             self.config['processed_redo_records'] += 1
@@ -1579,6 +1598,8 @@ class ExecuteWithInfoMixin():
 
         info_bytearray = bytearray()
 
+        # Call g2_engine.processWithInfo() and handle "edge" cases.
+
         try:
             self.g2_engine.processWithInfo(redo_record, info_bytearray, self.g2_engine_flags)
             self.config['processed_redo_records'] += 1
@@ -1603,7 +1624,7 @@ class ExecuteWithInfoMixin():
 
         filtered_info_json = self.filter_info_message(message=info_json)
 
-#         # Put "info" on info queue.
+        # Put "info" on info queue.
 
         if filtered_info_json:
             self.send_to_info_queue(filtered_info_json)
@@ -1791,12 +1812,16 @@ class OutputRabbitmqMixin():
     def __init__(self, *args, **kwargs):
         logging.debug(message_debug(996, threading.current_thread().name, "OutputRabbitmqMixin"))
 
+        # Connect to RabbitMQ for "info".
+
         self.output_rabbitmq_mixin_info_rabbitmq = Rabbitmq(
             username=self.config.get("rabbitmq_info_username"),
             password=self.config.get("rabbitmq_info_password"),
             host=self.config.get("rabbitmq_info_host"),
             queue_name=self.config.get("rabbitmq_info_queue"),
         )
+
+        # Connect to RabbitMQ for "failure".
 
         self.output_rabbitmq_mixin_failure_rabbitmq = Rabbitmq(
             username=self.config.get("rabbitmq_failure_username"),
@@ -1918,7 +1943,7 @@ class ProcessRedoQueueThread(threading.Thread):
 
             self.govern()
 
-            # Process record.
+            # Process record based on the Mixin's process_redo_record() method.
 
             self.process_redo_record(redo_record)
 
@@ -2592,7 +2617,7 @@ def do_sleep(args):
 def do_write_to_kafka(args):
     '''
     Read Senzing redo records from Senzing SDK and send to Kafka.
-    No processing is done.
+    No g2_engine processing is done.
     '''
 
     options_to_defaults_map = {
@@ -2611,7 +2636,7 @@ def do_write_to_kafka(args):
 def do_write_to_rabbitmq(args):
     '''
     Read Senzing redo records from Senzing SDK and send to RabbitMQ.
-    No processing is done.
+    No g2_engine processing is done.
     '''
 
     options_to_defaults_map = {
