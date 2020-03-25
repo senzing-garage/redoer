@@ -41,7 +41,7 @@ except ImportError:
 __all__ = []
 __version__ = "1.3.0"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2020-03-19'
+__updated__ = '2020-03-25'
 
 # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 SENZING_PRODUCT_ID = "5010"
@@ -207,7 +207,7 @@ configuration_locator = {
     "rabbitmq_prefetch_count": {
         "default": 50,
         "env": "SENZING_RABBITMQ_PREFETCH_COUNT",
-        "cli": "rabbitmq_prefetch_count",
+        "cli": "rabbitmq-prefetch-count",
     },
     "rabbitmq_redo_host": {
         "default": None,
@@ -222,7 +222,7 @@ configuration_locator = {
     "rabbitmq_redo_queue": {
         "default": "senzing-rabbitmq-redo-queue",
         "env": "SENZING_RABBITMQ_REDO_QUEUE",
-        "cli": "rabbitmq-queue",
+        "cli": "rabbitmq-redo-queue",
     },
     "rabbitmq_redo_username": {
         "default": None,
@@ -237,7 +237,7 @@ configuration_locator = {
     "redo_sleep_time_in_seconds": {
         "default": 60,
         "env": "SENZING_REDO_SLEEP_TIME_IN_SECONDS",
-        "cli": "sleep-time-in-seconds",
+        "cli": "redo-sleep-time-in-seconds",
     },
     "resource_path": {
         "default": "/opt/senzing/g2/resources",
