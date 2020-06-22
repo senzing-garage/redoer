@@ -41,7 +41,7 @@ except ImportError:
 __all__ = []
 __version__ = "1.3.0"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2020-03-25'
+__updated__ = '2020-06-22'
 
 # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 SENZING_PRODUCT_ID = "5010"
@@ -283,363 +283,46 @@ def get_parser():
     subcommands = {
         'redo': {
             "help": 'Read Senzing redo records from Senzing SDK and send to G2Engine.process()',
-            "arguments": {
-                "--engine-configuration-json": {
-                    "dest": "engine_configuration_json",
-                    "metavar": "SENZING_ENGINE_CONFIGURATION_JSON",
-                    "help": "Advanced Senzing engine configuration. Default: none"
-                },
-                "--threads-per-process": {
-                    "dest": "threads_per_process",
-                    "metavar": "SENZING_THREADS_PER_PROCESS",
-                    "help": "Number of threads per process. Default: 4"
-                }
-            },
+            "argument_aspects": ["engine"]
         },
         'read-from-kafka': {
             "help": 'Read Senzing redo records from Kafka and send to G2Engine.process()',
+            "argument_aspects": ["engine", "threads", "monitoring", "kafka", "kafka-redo"],
             "arguments": {
-                "--engine-configuration-json": {
-                    "dest": "engine_configuration_json",
-                    "metavar": "SENZING_ENGINE_CONFIGURATION_JSON",
-                    "help": "Advanced Senzing engine configuration. Default: none"
-                },
-                "--monitoring-period-in-seconds": {
-                    "dest": "monitoring_period_in_seconds",
-                    "metavar": "SENZING_MONITORING_PERIOD_IN_SECONDS",
-                    "help": "Period, in seconds, between monitoring reports. Default: 600"
-                },
-                "--kafka-bootstrap-server": {
-                    "dest": "kafka_bootstrap_server",
-                    "metavar": "SENZING_KAFKA_BOOTSTRAP_SERVER",
-                    "help": "Kafka bootstrap server. Default: localhost:9162"
-                },
                 "--kafka-group": {
                     "dest": "kafka_group",
                     "metavar": "SENZING_KAFKA_GROUP",
                     "help": "Kafka group. Default: senzing-kafka-group"
                 },
-                "--kafka-redo-bootstrap-server": {
-                    "dest": "kafka_redo_bootstrap_server",
-                    "metavar": "SENZING_KAFKA_REDO_BOOTSTRAP_SERVER",
-                    "help": "Kafka bootstrap server. Default: localhost:9092"
-                },
-                "--kafka-redo-group": {
-                    "dest": "kafka_redo_group",
-                    "metavar": "SENZING_KAFKA_REDO_GROUP",
-                    "help": "Kafka group. Default: senzing-kafka-redo-group"
-                },
-                "--kafka-redo-topic": {
-                    "dest": "kafka_redo_topic",
-                    "metavar": "SENZING_KAFKA_REDO_TOPIC",
-                    "help": "Kafka topic. Default: senzing-kafka-redo-topic"
-                },
-                "--threads-per-process": {
-                    "dest": "threads_per_process",
-                    "metavar": "SENZING_THREADS_PER_PROCESS",
-                    "help": "Number of threads per process. Default: 4"
-                }
             },
         },
         'read-from-rabbitmq': {
             "help": 'Read Senzing redo records from RabbitMQ and send to G2Engine.process()',
-            "arguments": {
-                "--engine-configuration-json": {
-                    "dest": "engine_configuration_json",
-                    "metavar": "SENZING_ENGINE_CONFIGURATION_JSON",
-                    "help": "Advanced Senzing engine configuration. Default: none"
-                },
-                "--monitoring-period-in-seconds": {
-                    "dest": "monitoring_period_in_seconds",
-                    "metavar": "SENZING_MONITORING_PERIOD_IN_SECONDS",
-                    "help": "Period, in seconds, between monitoring reports. Default: 600"
-                },
-                "--rabbitmq-host": {
-                    "dest": "rabbitmq_host",
-                    "metavar": "SENZING_RABBITMQ_HOST",
-                    "help": "RabbitMQ host. Default: localhost:5672"
-                },
-                "--rabbitmq-username": {
-                    "dest": "rabbitmq_username",
-                    "metavar": "SENZING_RABBITMQ_USERNAME",
-                    "help": "RabbitMQ username. Default: user"
-                },
-                "--rabbitmq-password": {
-                    "dest": "rabbitmq_password",
-                    "metavar": "SENZING_RABBITMQ_PASSWORD",
-                    "help": "RabbitMQ password. Default: bitnami"
-                },
-                "--rabbitmq-redo-queue": {
-                    "dest": "rabbitmq_redo_queue",
-                    "metavar": "SENZING_RABBITMQ_REDO_QUEUE",
-                    "help": "RabbitMQ queue. Default: senzing-rabbitmq-redo-queue"
-                },
-                "--threads-per-process": {
-                    "dest": "threads_per_process",
-                    "metavar": "SENZING_THREADS_PER_PROCESS",
-                    "help": "Number of threads per process. Default: 4"
-                }
-            },
+            "argument_aspects": ["engine", "threads", "monitoring", "rabbitmq"],
         },
         'read-from-kafka-withinfo': {
             "help": 'Read Senzing redo records from Kafka and send to G2Engine.processWithInfo()',
-            "arguments": {
-                "--engine-configuration-json": {
-                    "dest": "engine_configuration_json",
-                    "metavar": "SENZING_ENGINE_CONFIGURATION_JSON",
-                    "help": "Advanced Senzing engine configuration. Default: none"
-                },
-                "--monitoring-period-in-seconds": {
-                    "dest": "monitoring_period_in_seconds",
-                    "metavar": "SENZING_MONITORING_PERIOD_IN_SECONDS",
-                    "help": "Period, in seconds, between monitoring reports. Default: 600"
-                },
-                "--kafka-bootstrap-server": {
-                    "dest": "kafka_bootstrap_server",
-                    "metavar": "SENZING_KAFKA_BOOTSTRAP_SERVER",
-                    "help": "Kafka bootstrap server. Default: localhost:9092"
-                },
-                "--kafka-redo-bootstrap-server": {
-                    "dest": "kafka_redo_bootstrap_server",
-                    "metavar": "SENZING_KAFKA_REDO_BOOTSTRAP_SERVER",
-                    "help": "Kafka bootstrap server. Default: SENZING_KAFKA_BOOTSTRAP_SERVER"
-                },
-                "--kafka-redo-group": {
-                    "dest": "kafka_redo_group",
-                    "metavar": "SENZING_KAFKA_REDO_GROUP",
-                    "help": "Kafka group. Default: senzing-kafka-redo-group"
-                },
-                "--kafka-redo-topic": {
-                    "dest": "kafka_redo_topic",
-                    "metavar": "SENZING_KAFKA_REDO_TOPIC",
-                    "help": "Kafka topic. Default: senzing-kafka-redo-topic"
-                },
-                "--threads-per-process": {
-                    "dest": "threads_per_process",
-                    "metavar": "SENZING_THREADS_PER_PROCESS",
-                    "help": "Number of threads per process. Default: 4"
-                }
-            },
+            "argument_aspects": ["engine", "threads", "monitoring", "kafka", "kafka-redo"],
         },
         'read-from-rabbitmq-withinfo': {
             "help": 'Read Senzing redo records from RabbitMQ and send to G2Engine.processWithInfo()',
-            "arguments": {
-                "--engine-configuration-json": {
-                    "dest": "engine_configuration_json",
-                    "metavar": "SENZING_ENGINE_CONFIGURATION_JSON",
-                    "help": "Advanced Senzing engine configuration. Default: none"
-                },
-                "--monitoring-period-in-seconds": {
-                    "dest": "monitoring_period_in_seconds",
-                    "metavar": "SENZING_MONITORING_PERIOD_IN_SECONDS",
-                    "help": "Period, in seconds, between monitoring reports. Default: 600"
-                },
-                "--rabbitmq-host": {
-                    "dest": "rabbitmq_host",
-                    "metavar": "SENZING_RABBITMQ_HOST",
-                    "help": "RabbitMQ host. Default: localhost:5672"
-                },
-                "--rabbitmq-username": {
-                    "dest": "rabbitmq_username",
-                    "metavar": "SENZING_RABBITMQ_USERNAME",
-                    "help": "RabbitMQ username. Default: user"
-                },
-                "--rabbitmq-password": {
-                    "dest": "rabbitmq_password",
-                    "metavar": "SENZING_RABBITMQ_PASSWORD",
-                    "help": "RabbitMQ password. Default: bitnami"
-                },
-                "--rabbitmq-redo-queue": {
-                    "dest": "rabbitmq_redo_queue",
-                    "metavar": "SENZING_RABBITMQ_REDO_QUEUE",
-                    "help": "RabbitMQ queue. Default: senzing-rabbitmq-redo-queue"
-                },
-                "--threads-per-process": {
-                    "dest": "threads_per_process",
-                    "metavar": "SENZING_THREADS_PER_PROCESS",
-                    "help": "Number of threads per process. Default: 4"
-                }
-            },
+            "argument_aspects": ["engine", "threads", "monitoring", "rabbitmq"],
         },
         'redo-withinfo-kafka': {
             "help": 'Read Senzing redo records from Senzing SDK, send to G2Engine.processWithInfo(), results sent to Kafka.',
-            "arguments": {
-                "--engine-configuration-json": {
-                    "dest": "engine_configuration_json",
-                    "metavar": "SENZING_ENGINE_CONFIGURATION_JSON",
-                    "help": "Advanced Senzing engine configuration. Default: none"
-                },
-                "--kafka-bootstrap-server": {
-                    "dest": "kafka_bootstrap_server",
-                    "metavar": "SENZING_KAFKA_BOOTSTRAP_SERVER",
-                    "help": "Kafka bootstrap server. Default: localhost:9092"
-                },
-                "--kafka-failure-bootstrap-server": {
-                    "dest": "kafka_failure_bootstrap_server",
-                    "metavar": "SENZING_KAFKA_FAILURE_BOOTSTRAP_SERVER",
-                    "help": "Kafka bootstrap server. Default: SENZING_KAFKA_BOOTSTRAP_SERVER"
-                },
-                "--kafka-failure-topic": {
-                    "dest": "kafka_failure_topic",
-                    "metavar": "SENZING_KAFKA_FAILURE_TOPIC",
-                    "help": "Kafka topic for failures. Default: senzing-kafka-failure-topic"
-                },
-                "--kafka-info-bootstrap-server": {
-                    "dest": "kafka_info_bootstrap_server",
-                    "metavar": "SENZING_KAFKA_INFO_BOOTSTRAP_SERVER",
-                    "help": "Kafka bootstrap server. Default: SENZING_KAFKA_BOOTSTRAP_SERVER"
-                },
-                "--kafka-info-topic": {
-                    "dest": "kafka_info_topic",
-                    "metavar": "SENZING_KAFKA_INFO_TOPIC",
-                    "help": "Kafka topic for info. Default: senzing-kafka-info-topic"
-                },
-                "--threads-per-process": {
-                    "dest": "threads_per_process",
-                    "metavar": "SENZING_THREADS_PER_PROCESS",
-                    "help": "Number of threads per process. Default: 4"
-                }
-            },
+            "argument_aspects": ["engine", "threads", "kafka", "kafka-info", "kafka-failure"],
         },
         'redo-withinfo-rabbitmq': {
             "help": 'Read Senzing redo records from Senzing SDK, send to G2Engine.processWithInfo(), results sent to RabbitMQ.',
-            "arguments": {
-                "--engine-configuration-json": {
-                    "dest": "engine_configuration_json",
-                    "metavar": "SENZING_ENGINE_CONFIGURATION_JSON",
-                    "help": "Advanced Senzing engine configuration. Default: none"
-                },
-                "--monitoring-period-in-seconds": {
-                    "dest": "monitoring_period_in_seconds",
-                    "metavar": "SENZING_MONITORING_PERIOD_IN_SECONDS",
-                    "help": "Period, in seconds, between monitoring reports. Default: 600"
-                },
-                "--rabbitmq-host": {
-                    "dest": "rabbitmq_host",
-                    "metavar": "SENZING_RABBITMQ_HOST",
-                    "help": "RabbitMQ host. Default: localhost:5672"
-                },
-                "--rabbitmq-username": {
-                    "dest": "rabbitmq_username",
-                    "metavar": "SENZING_RABBITMQ_USERNAME",
-                    "help": "RabbitMQ username. Default: user"
-                },
-                "--rabbitmq-password": {
-                    "dest": "rabbitmq_password",
-                    "metavar": "SENZING_RABBITMQ_PASSWORD",
-                    "help": "RabbitMQ password. Default: bitnami"
-                },
-                "--rabbitmq-info-host": {
-                    "dest": "rabbitmq_info_host",
-                    "metavar": "SENZING_RABBITMQ_INFO_HOST",
-                    "help": "RabbitMQ host. Default: SENZING_RABBITMQ_HOST"
-                },
-                "--rabbitmq-info-password": {
-                    "dest": "rabbitmq_info_password",
-                    "metavar": "SENZING_RABBITMQ_INFO_PASSWORD",
-                    "help": "RabbitMQ password. Default: SENZING_RABBITMQ_PASSWORD"
-                },
-                "--rabbitmq-info-queue": {
-                    "dest": "rabbitmq_info_queue",
-                    "metavar": "SENZING_RABBITMQ_INFO_QUEUE",
-                    "help": "RabbitMQ queue for info. Default: senzing-rabbitmq-info-queue"
-                },
-                "--rabbitmq-info-username": {
-                    "dest": "rabbitmq_info_username",
-                    "metavar": "SENZING_RABBITMQ_INFO_USERNAME",
-                    "help": "RabbitMQ username. Default: SENZING_RABBITMQ_USERNAME"
-                },
-                "--rabbitmq-failure-host": {
-                    "dest": "rabbitmq_failure_host",
-                    "metavar": "SENZING_RABBITMQ_FAILURE_HOST",
-                    "help": "RabbitMQ host. Default: SENZING_RABBITMQ_HOST"
-                },
-                "--rabbitmq-failure-password": {
-                    "dest": "rabbitmq_failure_password",
-                    "metavar": "SENZING_RABBITMQ_FAILURE_PASSWORD",
-                    "help": "RabbitMQ password. Default: SENZING_RABBITMQ_PASSWORD"
-                },
-                "--rabbitmq-failure-queue": {
-                    "dest": "rabbitmq_failure_queue",
-                    "metavar": "SENZING_RABBITMQ_FAILURE_QUEUE",
-                    "help": "RabbitMQ queue for failures. Default: senzing-rabbitmq-failure-queue"
-                },
-                "--rabbitmq-failure-username": {
-                    "dest": "rabbitmq_failure_username",
-                    "metavar": "SENZING_RABBITMQ_FAILURE_USERNAME",
-                    "help": "RabbitMQ username. Default: SENZING_RABBITMQ_USERNAME"
-                },
-                "--threads-per-process": {
-                    "dest": "threads_per_process",
-                    "metavar": "SENZING_THREADS_PER_PROCESS",
-                    "help": "Number of threads per process. Default: 4"
-                }
-            },
+            "argument_aspects": ["engine", "threads", "monitoring", "rabbitmq", "rabbitmq-failure", "rabbitmq-info"],
         },
         'write-to-kafka': {
             "help": 'Read Senzing redo records from Senzing SDK and send to Kafka.',
-            "arguments": {
-                "--engine-configuration-json": {
-                    "dest": "engine_configuration_json",
-                    "metavar": "SENZING_ENGINE_CONFIGURATION_JSON",
-                    "help": "Advanced Senzing engine configuration. Default: none"
-                },
-                "--monitoring-period-in-seconds": {
-                    "dest": "monitoring_period_in_seconds",
-                    "metavar": "SENZING_MONITORING_PERIOD_IN_SECONDS",
-                    "help": "Period, in seconds, between monitoring reports. Default: 600"
-                },
-                "--kafka-bootstrap-server": {
-                    "dest": "kafka_bootstrap_server",
-                    "metavar": "SENZING_KAFKA_BOOTSTRAP_SERVER",
-                    "help": "Kafka bootstrap server. Default: localhost:9092"
-                },
-                "--kafka-redo-bootstrap-server": {
-                    "dest": "kafka_redo_bootstrap_server",
-                    "metavar": "SENZING_KAFKA_REDO_BOOTSTRAP_SERVER",
-                    "help": "Kafka bootstrap server. Default: localhost:9092"
-                },
-                "--kafka-redo-topic": {
-                    "dest": "kafka_redo_topic",
-                    "metavar": "SENZING_REDO_KAFKA_TOPIC",
-                    "help": "Kafka topic. Default: senzing-redo-kafka-topic"
-                },
-            },
+            "argument_aspects": ["engine", "monitoring", "kafka", "kafka-redo"],
         },
         'write-to-rabbitmq': {
             "help": 'Read Senzing redo records from Senzing SDK and send to RabbitMQ.',
-            "arguments": {
-                "--engine-configuration-json": {
-                    "dest": "engine_configuration_json",
-                    "metavar": "SENZING_ENGINE_CONFIGURATION_JSON",
-                    "help": "Advanced Senzing engine configuration. Default: none"
-                },
-                "--monitoring-period-in-seconds": {
-                    "dest": "monitoring_period_in_seconds",
-                    "metavar": "SENZING_MONITORING_PERIOD_IN_SECONDS",
-                    "help": "Period, in seconds, between monitoring reports. Default: 600"
-                },
-                "--rabbitmq-host": {
-                    "dest": "rabbitmq_host",
-                    "metavar": "SENZING_RABBITMQ_HOST",
-                    "help": "RabbitMQ host. Default: localhost:5672"
-                },
-                "--rabbitmq-username": {
-                    "dest": "rabbitmq_username",
-                    "metavar": "SENZING_RABBITMQ_USERNAME",
-                    "help": "RabbitMQ username. Default: user"
-                },
-                "--rabbitmq-password": {
-                    "dest": "rabbitmq_password",
-                    "metavar": "SENZING_RABBITMQ_PASSWORD",
-                    "help": "RabbitMQ password. Default: bitnami"
-                },
-                "--rabbitmq-redo-queue": {
-                    "dest": "rabbitmq_redo_queue",
-                    "metavar": "SENZING_RABBITMQ_REDO_QUEUE",
-                    "help": "RabbitMQ queue. Default: senzing-rabbitmq-redo-queue"
-                },
-            },
+            "argument_aspects": ["engine", "monitoring", "rabbitmq"],
         },
         'sleep': {
             "help": 'Do nothing but sleep. For Docker testing.',
@@ -659,7 +342,160 @@ def get_parser():
         },
     }
 
-    parser = argparse.ArgumentParser(prog="template-python.py", description="Example python skeleton. For more information, see https://github.com/Senzing/template-python")
+    # Define argument_aspects.
+
+    argument_aspects = {
+        "engine": {
+            "--engine-configuration-json": {
+                "dest": "engine_configuration_json",
+                "metavar": "SENZING_ENGINE_CONFIGURATION_JSON",
+                "help": "Advanced Senzing engine configuration. Default: none"
+            }
+        },
+        "kafka": {
+            "--kafka-bootstrap-server": {
+                "dest": "kafka_bootstrap_server",
+                "metavar": "SENZING_KAFKA_BOOTSTRAP_SERVER",
+                "help": "Kafka bootstrap server. Default: localhost:9092"
+            },
+        },
+        "kafka-failure": {
+            "--kafka-failure-bootstrap-server": {
+                "dest": "kafka_failure_bootstrap_server",
+                "metavar": "SENZING_KAFKA_FAILURE_BOOTSTRAP_SERVER",
+                "help": "Kafka bootstrap server. Default: SENZING_KAFKA_BOOTSTRAP_SERVER"
+            },
+            "--kafka-failure-topic": {
+                "dest": "kafka_failure_topic",
+                "metavar": "SENZING_KAFKA_FAILURE_TOPIC",
+                "help": "Kafka topic for failures. Default: senzing-kafka-failure-topic"
+            },
+        },
+        "kafka-info": {
+            "--kafka-info-bootstrap-server": {
+                "dest": "kafka_info_bootstrap_server",
+                "metavar": "SENZING_KAFKA_INFO_BOOTSTRAP_SERVER",
+                "help": "Kafka bootstrap server. Default: SENZING_KAFKA_BOOTSTRAP_SERVER"
+            },
+            "--kafka-info-topic": {
+                "dest": "kafka_info_topic",
+                "metavar": "SENZING_KAFKA_INFO_TOPIC",
+                "help": "Kafka topic for info. Default: senzing-kafka-info-topic"
+            },
+        },
+        "kafka-redo": {
+            "--kafka-redo-bootstrap-server": {
+                "dest": "kafka_redo_bootstrap_server",
+                "metavar": "SENZING_KAFKA_REDO_BOOTSTRAP_SERVER",
+                "help": "Kafka bootstrap server. Default: localhost:9092"
+            },
+            "--kafka-redo-group": {
+                "dest": "kafka_redo_group",
+                "metavar": "SENZING_KAFKA_REDO_GROUP",
+                "help": "Kafka group. Default: senzing-kafka-redo-group"
+            },
+            "--kafka-redo-topic": {
+                "dest": "kafka_redo_topic",
+                "metavar": "SENZING_KAFKA_REDO_TOPIC",
+                "help": "Kafka topic. Default: senzing-kafka-redo-topic"
+            },
+        },
+        "monitoring": {
+            "--monitoring-period-in-seconds": {
+                "dest": "monitoring_period_in_seconds",
+                "metavar": "SENZING_MONITORING_PERIOD_IN_SECONDS",
+                "help": "Period, in seconds, between monitoring reports. Default: 600"
+            },
+        },
+        "rabbitmq": {
+            "--rabbitmq-host": {
+                "dest": "rabbitmq_host",
+                "metavar": "SENZING_RABBITMQ_HOST",
+                "help": "RabbitMQ host. Default: localhost:5672"
+            },
+            "--rabbitmq-password": {
+                "dest": "rabbitmq_password",
+                "metavar": "SENZING_RABBITMQ_PASSWORD",
+                "help": "RabbitMQ password. Default: bitnami"
+            },
+            "--rabbitmq-redo-queue": {
+                "dest": "rabbitmq_redo_queue",
+                "metavar": "SENZING_RABBITMQ_REDO_QUEUE",
+                "help": "RabbitMQ queue. Default: senzing-rabbitmq-redo-queue"
+            },
+            "--rabbitmq-username": {
+                "dest": "rabbitmq_username",
+                "metavar": "SENZING_RABBITMQ_USERNAME",
+                "help": "RabbitMQ username. Default: user"
+            },
+        },
+        "rabbitmq-failure": {
+            "--rabbitmq-failure-host": {
+                "dest": "rabbitmq_failure_host",
+                "metavar": "SENZING_RABBITMQ_FAILURE_HOST",
+                "help": "RabbitMQ host. Default: SENZING_RABBITMQ_HOST"
+            },
+            "--rabbitmq-failure-password": {
+                "dest": "rabbitmq_failure_password",
+                "metavar": "SENZING_RABBITMQ_FAILURE_PASSWORD",
+                "help": "RabbitMQ password. Default: SENZING_RABBITMQ_PASSWORD"
+            },
+            "--rabbitmq-failure-queue": {
+                "dest": "rabbitmq_failure_queue",
+                "metavar": "SENZING_RABBITMQ_FAILURE_QUEUE",
+                "help": "RabbitMQ queue for failures. Default: senzing-rabbitmq-failure-queue"
+            },
+            "--rabbitmq-failure-username": {
+                "dest": "rabbitmq_failure_username",
+                "metavar": "SENZING_RABBITMQ_FAILURE_USERNAME",
+                "help": "RabbitMQ username. Default: SENZING_RABBITMQ_USERNAME"
+            },
+        },
+        "rabbitmq-info": {
+            "--rabbitmq-info-host": {
+                "dest": "rabbitmq_info_host",
+                "metavar": "SENZING_RABBITMQ_INFO_HOST",
+                "help": "RabbitMQ host. Default: SENZING_RABBITMQ_HOST"
+            },
+            "--rabbitmq-info-password": {
+                "dest": "rabbitmq_info_password",
+                "metavar": "SENZING_RABBITMQ_INFO_PASSWORD",
+                "help": "RabbitMQ password. Default: SENZING_RABBITMQ_PASSWORD"
+            },
+            "--rabbitmq-info-queue": {
+                "dest": "rabbitmq_info_queue",
+                "metavar": "SENZING_RABBITMQ_INFO_QUEUE",
+                "help": "RabbitMQ queue for info. Default: senzing-rabbitmq-info-queue"
+            },
+            "--rabbitmq-info-username": {
+                "dest": "rabbitmq_info_username",
+                "metavar": "SENZING_RABBITMQ_INFO_USERNAME",
+                "help": "RabbitMQ username. Default: SENZING_RABBITMQ_USERNAME"
+            },
+        },
+        "threads": {
+            "--threads-per-process": {
+                "dest": "threads_per_process",
+                "metavar": "SENZING_THREADS_PER_PROCESS",
+                "help": "Number of threads per process. Default: 4"
+            }
+        },
+    }
+
+    # Augment "subcommands" variable with arguments specified by aspects.
+
+    for subcommand, subcommand_value in subcommands.items():
+        if 'argument_aspects' in subcommand_value:
+            for aspect in subcommand_value['argument_aspects']:
+                if 'arguments' not in subcommands[subcommand]:
+                    subcommands[subcommand]['arguments'] = {}
+                arguments = argument_aspects.get(aspect, {})
+                for argument, argument_value in arguments.items():
+                    subcommands[subcommand]['arguments'][argument] = argument_value
+
+    # Parse command line arguments.
+
+    parser = argparse.ArgumentParser(prog="redoer.py", description="Process Senzing redo records. For more information, see https://github.com/Senzing/redoer")
     subparsers = parser.add_subparsers(dest='subcommand', help='Subcommands (SENZING_SUBCOMMAND):')
 
     for subcommand_key, subcommand_values in subcommands.items():
