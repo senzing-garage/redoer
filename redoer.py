@@ -620,6 +620,7 @@ message_dictionary = {
     "168": "  Expiration time: EXPIRED {0} days ago",
     "180": "User-supplied Governor loaded from {0}.",
     "181": "Monitoring halted. No active workers.",
+    "190": "AWS SQS Long-polling: No messages from {0}",
     "292": "Configuration change detected.  Old: {0} New: {1}",
     "293": "For information on warnings and errors, see https://github.com/Senzing/stream-loader#errors",
     "294": "Version: {0}  Updated: {1}",
