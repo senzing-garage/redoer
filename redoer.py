@@ -2666,6 +2666,23 @@ def do_redo_withinfo_rabbitmq(args):
     )
 
 
+def do_redo_withinfo_sqs(args):
+    '''
+    Read Senzing redo records from Senzing SDK and send to G2Engine.processWithInfo().
+    No external queues are used.  "withinfo" returned is sent to RabbitMQ.
+    '''
+
+    options_to_defaults_map = {}
+
+    redo_processor(
+        args=args,
+        options_to_defaults_map=options_to_defaults_map,
+        read_thread=QueueRedoRecordsInternalThread,
+        process_thread=ProcessRedoWithinfoSqsThread,
+        monitor_thread=MonitorThread
+    )
+
+
 def do_sleep(args):
     ''' Sleep.  Used for debugging. '''
 
