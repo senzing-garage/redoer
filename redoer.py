@@ -2153,6 +2153,40 @@ class QueueRedoRecordsRabbitmqThread(ProcessRedoQueueThread, InputInternalMixin,
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
+# ---- AWS SQS related --------------------------------------------------------
+
+
+class ProcessReadFromSqsThread(ProcessRedoQueueThread, InputSqsMixin, ExecuteMixin, OutputInternalMixin):
+
+    def __init__(self, *args, **kwargs):
+        logging.debug(message_debug(997, threading.current_thread().name, "ProcessReadFromSqsThread"))
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
+
+
+class ProcessReadFromSqsWithinfoThread(ProcessRedoQueueThread, InputSqsMixin, ExecuteWithInfoMixin, OutputSqsMixin):
+
+    def __init__(self, *args, **kwargs):
+        logging.debug(message_debug(997, threading.current_thread().name, "ProcessReadFromSqsWithinfoThread"))
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
+
+
+class ProcessRedoWithinfoSqsThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWithInfoMixin, OutputSqsMixin):
+
+    def __init__(self, *args, **kwargs):
+        logging.debug(message_debug(997, threading.current_thread().name, "ProcessRedoWithinfoSqsThread"))
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
+
+
+class QueueRedoRecordsSqsThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWriteToSqsMixin):
+
+    def __init__(self, *args, **kwargs):
+        logging.debug(message_debug(997, threading.current_thread().name, "QueueRedoRecordsSqsThread"))
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
+
 # -----------------------------------------------------------------------------
 # Utility functions
 # -----------------------------------------------------------------------------
@@ -2510,6 +2544,22 @@ def do_read_from_rabbitmq(args):
     )
 
 
+def do_read_from_sqs(args):
+    '''
+    Read Senzing redo records from RabbitMQ and send to G2Engine.process().
+    "withinfo" is not returned.
+    '''
+
+    options_to_defaults_map = {}
+
+    redo_processor(
+        args=args,
+        options_to_defaults_map=options_to_defaults_map,
+        process_thread=ProcessReadFromSqsThread,
+        monitor_thread=MonitorThread
+    )
+
+
 def do_read_from_kafka_withinfo(args):
     '''
     Read Senzing redo records from Kafka and send to G2Engine.processWithInfo().
@@ -2682,6 +2732,21 @@ def do_write_to_rabbitmq(args):
         options_to_defaults_map=options_to_defaults_map,
         read_thread=QueueRedoRecordsInternalThread,
         process_thread=QueueRedoRecordsRabbitmqThread,
+        monitor_thread=MonitorThread
+    )
+
+
+def do_write_to_sqs(args):
+    '''
+    Read Senzing redo records from Senzing SDK and send to AWS SQS.
+    No g2_engine processing is done.
+    '''
+
+    redo_processor(
+        args=args,
+        options_to_defaults_map=options_to_defaults_map,
+        read_thread=QueueRedoRecordsInternalThread,
+        process_thread=QueueRedoRecordsSqsThread,
         monitor_thread=MonitorThread
     )
 
