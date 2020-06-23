@@ -13,6 +13,7 @@
 import argparse
 import datetime
 from glob import glob
+import boto3
 import json
 import linecache
 import logging
@@ -1443,7 +1444,7 @@ class InputSqsMixin():
 
     def __init__(self, *args, **kwargs):
         logging.debug(message_debug(996, threading.current_thread().name, "InputSqsMixin"))
-        self.queue_url = config.get("sqs_redo_queue_url")
+        self.queue_url = self.config.get("sqs_redo_queue_url")
         self.sqs = boto3.client("sqs")
 
     def redo_records(self):
@@ -1686,7 +1687,7 @@ class ExecuteWriteToSqsMixin():
     def __init__(self, *args, **kwargs):
         logging.debug(message_debug(996, threading.current_thread().name, "ExecuteWriteToSqsMixin"))
         self.queue_url = self.config.get("sqs_redo_queue_url")
-        self.sqs = self.boto3.client("sqs")
+        self.sqs = boto3.client("sqs")
 
     def process_redo_record(self, redo_record=None):
         '''
@@ -1848,8 +1849,8 @@ class OutputSqsMixin():
 
     def __init__(self, *args, **kwargs):
         logging.debug(message_debug(996, threading.current_thread().name, "OutputInternalMixin"))
-        self.info_queue_url = selfconfig.get("sqs_info_queue_url")
-        self.failure_queue_url = selfconfig.get("sqs_failure_queue_url")
+        self.info_queue_url = self.config.get("sqs_info_queue_url")
+        self.failure_queue_url = self.config.get("sqs_failure_queue_url")
         self.sqs = boto3.client("sqs")
 
     def send_to_failure_queue(self, message):
@@ -2741,6 +2742,8 @@ def do_write_to_sqs(args):
     Read Senzing redo records from Senzing SDK and send to AWS SQS.
     No g2_engine processing is done.
     '''
+
+    options_to_defaults_map = {}
 
     redo_processor(
         args=args,
