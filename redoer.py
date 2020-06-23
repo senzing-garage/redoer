@@ -41,7 +41,7 @@ except ImportError:
 __all__ = []
 __version__ = "1.3.0"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2020-06-22'
+__updated__ = '2020-06-23'
 
 # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 SENZING_PRODUCT_ID = "5010"
@@ -249,6 +249,21 @@ configuration_locator = {
         "env": "SENZING_SLEEP_TIME_IN_SECONDS",
         "cli": "sleep-time-in-seconds"
     },
+    "sqs_failure_queue_url": {
+        "default": None,
+        "env": "SENZING_SQS_FAILURE_QUEUE_URL",
+        "cli": "sqs-failure-queue-url"
+    },
+    "sqs_info_queue_url": {
+        "default": None,
+        "env": "SENZING_SQS_INFO_QUEUE_URL",
+        "cli": "sqs-info-queue-url"
+    },
+    "sqs_redo_queue_url": {
+        "default": None,
+        "env": "SENZING_SQS_REDO_QUEUE_URL",
+        "cli": "sqs-redo-queue-url"
+    },
     "subcommand": {
         "default": None,
         "env": "SENZING_SUBCOMMAND",
@@ -285,36 +300,53 @@ def get_parser():
             "help": 'Read Senzing redo records from Senzing SDK and send to G2Engine.process()',
             "argument_aspects": ["engine"]
         },
+        'redo-withinfo-kafka': {
+            "help": 'Read Senzing redo records from Senzing SDK, send to G2Engine.processWithInfo(), results sent to Kafka.',
+            "argument_aspects": ["engine", "threads", "monitoring", "kafka", "kafka-redo", "kafka-info", "kafka-failure"],
+        },
+        'redo-withinfo-rabbitmq': {
+            "help": 'Read Senzing redo records from Senzing SDK, send to G2Engine.processWithInfo(), results sent to RabbitMQ.',
+            "argument_aspects": ["engine", "threads", "monitoring", "rabbitmq", "rabbitmq-redo", "rabbitmq-info", "rabbitmq-failure"],
+        },
+        'redo-withinfo-sqs': {
+            "help": 'Read Senzing redo records from Senzing SDK, send to G2Engine.processWithInfo(), results sent to AWS SQS.',
+            "argument_aspects": ["engine", "threads", "monitoring", "sqs-redo", "sqs-info", "sqs-failure"],
+        },
         'read-from-kafka': {
             "help": 'Read Senzing redo records from Kafka and send to G2Engine.process()',
             "argument_aspects": ["engine", "threads", "monitoring", "kafka", "kafka-redo"],
-            "arguments": {
-                "--kafka-group": {
-                    "dest": "kafka_group",
-                    "metavar": "SENZING_KAFKA_GROUP",
-                    "help": "Kafka group. Default: senzing-kafka-group"
-                },
-            },
-        },
-        'read-from-rabbitmq': {
-            "help": 'Read Senzing redo records from RabbitMQ and send to G2Engine.process()',
-            "argument_aspects": ["engine", "threads", "monitoring", "rabbitmq"],
         },
         'read-from-kafka-withinfo': {
             "help": 'Read Senzing redo records from Kafka and send to G2Engine.processWithInfo()',
             "argument_aspects": ["engine", "threads", "monitoring", "kafka", "kafka-redo"],
         },
+        'read-from-rabbitmq': {
+            "help": 'Read Senzing redo records from RabbitMQ and send to G2Engine.process()',
+            "argument_aspects": ["engine", "threads", "monitoring", "rabbitmq", "rabbitmq-redo"],
+        },
         'read-from-rabbitmq-withinfo': {
             "help": 'Read Senzing redo records from RabbitMQ and send to G2Engine.processWithInfo()',
-            "argument_aspects": ["engine", "threads", "monitoring", "rabbitmq"],
+            "argument_aspects": ["engine", "threads", "monitoring", "rabbitmq", "rabbitmq-redo"],
+        },
+        'read-from-sqs': {
+            "help": 'Read Senzing redo records from AWS SQS and send to G2Engine.process()',
+            "argument_aspects": ["engine", "threads", "monitoring", "sqs-redo"],
+        },
+        'read-from-sqs-withinfo': {
+            "help": 'Read Senzing redo records from AWS SQS and send to G2Engine.processWithInfo()',
+            "argument_aspects": ["engine", "threads", "monitoring", "sqs-redo"],
         },
         'redo-withinfo-kafka': {
             "help": 'Read Senzing redo records from Senzing SDK, send to G2Engine.processWithInfo(), results sent to Kafka.',
-            "argument_aspects": ["engine", "threads", "kafka", "kafka-info", "kafka-failure"],
+            "argument_aspects": ["engine", "threads", "kafka", "kafka-redo", "kafka-info", "kafka-failure"],
         },
         'redo-withinfo-rabbitmq': {
             "help": 'Read Senzing redo records from Senzing SDK, send to G2Engine.processWithInfo(), results sent to RabbitMQ.',
-            "argument_aspects": ["engine", "threads", "monitoring", "rabbitmq", "rabbitmq-failure", "rabbitmq-info"],
+            "argument_aspects": ["engine", "threads", "monitoring", "rabbitmq", "rabbitmq-redo", "rabbitmq-info", "rabbitmq-failure"],
+        },
+        'redo-withinfo-sqs': {
+            "help": 'Read Senzing redo records from Senzing SDK, send to G2Engine.processWithInfo(), results sent to AWS SQS.',
+            "argument_aspects": ["engine", "threads", "monitoring", "sqs-redo", "sqs-info", "sqs-failure" ],
         },
         'write-to-kafka': {
             "help": 'Read Senzing redo records from Senzing SDK and send to Kafka.',
@@ -322,7 +354,11 @@ def get_parser():
         },
         'write-to-rabbitmq': {
             "help": 'Read Senzing redo records from Senzing SDK and send to RabbitMQ.',
-            "argument_aspects": ["engine", "monitoring", "rabbitmq"],
+            "argument_aspects": ["engine", "monitoring", "rabbitmq", "rabbitmq-redo"],
+        },
+        'write-to-sqs': {
+            "help": 'Read Senzing redo records from Senzing SDK and send to AWS SQS.',
+            "argument_aspects": ["engine", "monitoring", "sqs-redo"],
         },
         'sleep': {
             "help": 'Do nothing but sleep. For Docker testing.',
@@ -418,11 +454,6 @@ def get_parser():
                 "metavar": "SENZING_RABBITMQ_PASSWORD",
                 "help": "RabbitMQ password. Default: bitnami"
             },
-            "--rabbitmq-redo-queue": {
-                "dest": "rabbitmq_redo_queue",
-                "metavar": "SENZING_RABBITMQ_REDO_QUEUE",
-                "help": "RabbitMQ queue. Default: senzing-rabbitmq-redo-queue"
-            },
             "--rabbitmq-username": {
                 "dest": "rabbitmq_username",
                 "metavar": "SENZING_RABBITMQ_USERNAME",
@@ -471,6 +502,49 @@ def get_parser():
                 "dest": "rabbitmq_info_username",
                 "metavar": "SENZING_RABBITMQ_INFO_USERNAME",
                 "help": "RabbitMQ username. Default: SENZING_RABBITMQ_USERNAME"
+            },
+        },
+        "rabbitmq-redo": {
+            "--rabbitmq-redo-host": {
+                "dest": "rabbitmq_redo_host",
+                "metavar": "SENZING_RABBITMQ_REDO_HOST",
+                "help": "RabbitMQ host. Default: localhost:5672"
+            },
+            "--rabbitmq-redo-password": {
+                "dest": "rabbitmq_redo_password",
+                "metavar": "SENZING_RABBITMQ_REDO_PASSWORD",
+                "help": "RabbitMQ password. Default: bitnami"
+            },
+            "--rabbitmq-redo-queue": {
+                "dest": "rabbitmq_redo_queue",
+                "metavar": "SENZING_RABBITMQ_REDO_QUEUE",
+                "help": "RabbitMQ queue. Default: senzing-rabbitmq-redo-queue"
+            },
+            "--rabbitmq-redo-username": {
+                "dest": "rabbitmq_redo_username",
+                "metavar": "SENZING_RABBITMQ_REDO_USERNAME",
+                "help": "RabbitMQ username. Default: user"
+            },
+        },
+        "sqs-failure": {
+            "--sqs-failure-queue-url": {
+                "dest": "sqs_failure_queue_url",
+                "metavar": "SENZING_SQS_FAILURE_QUEUE_URL",
+                "help": "AWS SQS failure URL. Default: none"
+            },
+        },
+        "sqs-info": {
+            "--sqs-info-queue-url": {
+                "dest": "sqs_info_queue_url",
+                "metavar": "SENZING_SQS_INFO_QUEUE_URL",
+                "help": "AWS SQS info URL. Default: none"
+            },
+        },
+        "sqs-redo": {
+            "--sqs-redo-queue-url": {
+                "dest": "sqs_redo_queue_url",
+                "metavar": "SENZING_SQS_REDO_QUEUE_URL",
+                "help": "AWS SQS redo URL. Default: none"
             },
         },
         "threads": {
