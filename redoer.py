@@ -318,7 +318,7 @@ def get_parser():
         },
         'read-from-kafka-withinfo': {
             "help": 'Read Senzing redo records from Kafka and send to G2Engine.processWithInfo()',
-            "argument_aspects": ["engine", "threads", "monitoring", "kafka", "kafka-redo"],
+            "argument_aspects": ["engine", "threads", "monitoring", "kafka", "kafka-redo", "kafka-info", "kafka-failure"],
         },
         'read-from-rabbitmq': {
             "help": 'Read Senzing redo records from RabbitMQ and send to G2Engine.process()',
@@ -326,7 +326,7 @@ def get_parser():
         },
         'read-from-rabbitmq-withinfo': {
             "help": 'Read Senzing redo records from RabbitMQ and send to G2Engine.processWithInfo()',
-            "argument_aspects": ["engine", "threads", "monitoring", "rabbitmq", "rabbitmq-redo"],
+            "argument_aspects": ["engine", "threads", "monitoring", "rabbitmq", "rabbitmq-redo", "rabbitmq-info", "rabbitmq-failure"],
         },
         'read-from-sqs': {
             "help": 'Read Senzing redo records from AWS SQS and send to G2Engine.process()',
@@ -334,7 +334,7 @@ def get_parser():
         },
         'read-from-sqs-withinfo': {
             "help": 'Read Senzing redo records from AWS SQS and send to G2Engine.processWithInfo()',
-            "argument_aspects": ["engine", "threads", "monitoring", "sqs-redo"],
+            "argument_aspects": ["engine", "threads", "monitoring", "sqs-redo", "sqs-info", "sqs-failure"],
         },
         'redo-withinfo-kafka': {
             "help": 'Read Senzing redo records from Senzing SDK, send to G2Engine.processWithInfo(), results sent to Kafka.',
@@ -423,7 +423,7 @@ def get_parser():
             "--kafka-redo-bootstrap-server": {
                 "dest": "kafka_redo_bootstrap_server",
                 "metavar": "SENZING_KAFKA_REDO_BOOTSTRAP_SERVER",
-                "help": "Kafka bootstrap server. Default: localhost:9092"
+                "help": "Kafka bootstrap server. Default: SENZING_KAFKA_BOOTSTRAP_SERVER"
             },
             "--kafka-redo-group": {
                 "dest": "kafka_redo_group",
@@ -508,12 +508,12 @@ def get_parser():
             "--rabbitmq-redo-host": {
                 "dest": "rabbitmq_redo_host",
                 "metavar": "SENZING_RABBITMQ_REDO_HOST",
-                "help": "RabbitMQ host. Default: localhost:5672"
+                "help": "RabbitMQ host. Default: SENZING_RABBITMQ_HOST"
             },
             "--rabbitmq-redo-password": {
                 "dest": "rabbitmq_redo_password",
                 "metavar": "SENZING_RABBITMQ_REDO_PASSWORD",
-                "help": "RabbitMQ password. Default: bitnami"
+                "help": "RabbitMQ password. Default: SENZING_RABBITMQ_PASSWORD"
             },
             "--rabbitmq-redo-queue": {
                 "dest": "rabbitmq_redo_queue",
@@ -523,7 +523,7 @@ def get_parser():
             "--rabbitmq-redo-username": {
                 "dest": "rabbitmq_redo_username",
                 "metavar": "SENZING_RABBITMQ_REDO_USERNAME",
-                "help": "RabbitMQ username. Default: user"
+                "help": "RabbitMQ username. Default: SENZING_RABBITMQ_USERNAME"
             },
         },
         "sqs-failure": {
@@ -1434,6 +1434,66 @@ class InputRabbitmqMixin():
             logging.debug(message_debug(918, threading.current_thread().name, message))
             yield message
 
+# -----------------------------------------------------------------------------
+# Class: InputSqsMixin
+# -----------------------------------------------------------------------------
+
+
+class InputSqsMixin():
+
+    def __init__(self, *args, **kwargs):
+        logging.debug(message_debug(996, threading.current_thread().name, "InputSqsMixin"))
+        self.queue_url = config.get("sqs_redo_queue_url")
+        self.sqs = boto3.client("sqs")
+
+    def redo_records(self):
+        '''
+        Generator that produces Senzing redo records
+        retrieved from a Kafka topic.
+        '''
+
+        while True:
+
+            # Get message from AWS SQS queue.
+
+            sqs_response = self.sqs.receive_message(
+                QueueUrl=self.queue_url,
+                AttributeNames=[],
+                MaxNumberOfMessages=1,
+                MessageAttributeNames=[],
+                VisibilityTimeout=0,
+                WaitTimeSeconds=20
+            )
+
+            # If non-standard SQS output or empty messages, just loop.
+
+            if sqs_response is None:
+                continue
+            sqs_messages = sqs_response.get("Messages", [])
+            if not sqs_messages:
+                logging.info(message_info(190, self.queue_url))
+                continue
+
+            # Construct and verify SQS message.
+
+            sqs_message = sqs_messages[0]
+            sqs_message_body = sqs_message.get("Body")
+            sqs_message_receipt_handle = sqs_message.get("ReceiptHandle")
+            self.config['received_from_redo_queue'] += 1
+
+            # As a generator, give the value to the co-routine.
+
+            logging.debug(message_debug(918, threading.current_thread().name, sqs_message_body))
+            assert type(sqs_message_body) == str
+            yield sqs_message_body
+
+            # After successful import into Senzing, tell AWS SQS we're done with message.
+
+            self.sqs.delete_message(
+                QueueUrl=self.queue_url,
+                ReceiptHandle=sqs_message_receipt_handle
+            )
+
 # =============================================================================
 # Mixins: Execute*
 #   Methods:
@@ -1540,34 +1600,6 @@ class ExecuteWithInfoMixin():
             self.send_to_info_queue(filtered_info_json)
 
 # -----------------------------------------------------------------------------
-# Class: ExecuteWriteToRabbitmqMixin
-# -----------------------------------------------------------------------------
-
-
-class ExecuteWriteToRabbitmqMixin():
-
-    def __init__(self, *args, **kwargs):
-        logging.debug(message_debug(996, threading.current_thread().name, "ExecuteWriteToRabbitmqMixin"))
-
-        self.execute_write_to_rabbitmq_mixin_rabbitmq = Rabbitmq(
-            username=self.config.get("rabbitmq_redo_username"),
-            password=self.config.get("rabbitmq_redo_password"),
-            host=self.config.get("rabbitmq_redo_host"),
-            queue_name=self.config.get("rabbitmq_redo_queue"),
-        )
-
-    def process_redo_record(self, redo_record=None):
-        '''
-        Process a single Senzing redo record.
-        Simply send to RabbitMQ.
-        '''
-
-        logging.debug(message_debug(919, threading.current_thread().name, redo_record))
-        assert type(redo_record) == str
-        self.execute_write_to_rabbitmq_mixin_rabbitmq.send(redo_record)
-        self.config['sent_to_redo_queue'] += 1
-
-# -----------------------------------------------------------------------------
 # Class: ExecuteWriteToKafkaMixin
 # -----------------------------------------------------------------------------
 
@@ -1615,6 +1647,62 @@ class ExecuteWriteToKafkaMixin():
             logging.warning(message_warn(406, threading.current_thread().name, self.kafka_redo_topic, err, redo_record))
         except:
             logging.warning(message_warn(407, threading.current_thread().name, self.kafka_redo_topic, err, redo_record))
+
+# -----------------------------------------------------------------------------
+# Class: ExecuteWriteToRabbitmqMixin
+# -----------------------------------------------------------------------------
+
+
+class ExecuteWriteToRabbitmqMixin():
+
+    def __init__(self, *args, **kwargs):
+        logging.debug(message_debug(996, threading.current_thread().name, "ExecuteWriteToRabbitmqMixin"))
+
+        self.execute_write_to_rabbitmq_mixin_rabbitmq = Rabbitmq(
+            username=self.config.get("rabbitmq_redo_username"),
+            password=self.config.get("rabbitmq_redo_password"),
+            host=self.config.get("rabbitmq_redo_host"),
+            queue_name=self.config.get("rabbitmq_redo_queue"),
+        )
+
+    def process_redo_record(self, redo_record=None):
+        '''
+        Process a single Senzing redo record.
+        Simply send to RabbitMQ.
+        '''
+
+        logging.debug(message_debug(919, threading.current_thread().name, redo_record))
+        assert type(redo_record) == str
+        self.execute_write_to_rabbitmq_mixin_rabbitmq.send(redo_record)
+        self.config['sent_to_redo_queue'] += 1
+
+# -----------------------------------------------------------------------------
+# Class: ExecuteWriteToRabbitmqMixin
+# -----------------------------------------------------------------------------
+
+
+class ExecuteWriteToSqsMixin():
+
+    def __init__(self, *args, **kwargs):
+        logging.debug(message_debug(996, threading.current_thread().name, "ExecuteWriteToSqsMixin"))
+        self.queue_url = self.config.get("sqs_redo_queue_url")
+        self.sqs = self.boto3.client("sqs")
+
+    def process_redo_record(self, redo_record=None):
+        '''
+        Process a single Senzing redo record.
+        Simply send to AWS SQS.
+        '''
+
+        logging.debug(message_debug(919, threading.current_thread().name, redo_record))
+        assert type(redo_record) == str
+        response = self.sqs.send_message(
+            QueueUrl=self.queue_url,
+            DelaySeconds=10,
+            MessageAttributes={},
+            MessageBody=(redo_record),
+        )
+        self.config['sent_to_redo_queue'] += 1
 
 # =============================================================================
 # Mixins: Output*
@@ -1748,6 +1836,40 @@ class OutputRabbitmqMixin():
     def send_to_info_queue(self, message):
         assert type(message) == str
         self.output_rabbitmq_mixin_info_rabbitmq.send(message)
+        self.config['sent_to_info_queue'] += 1
+
+# -----------------------------------------------------------------------------
+# Class: OutputInternalMixin
+# -----------------------------------------------------------------------------
+
+
+class OutputSqsMixin():
+    ''' This is a "null object". '''
+
+    def __init__(self, *args, **kwargs):
+        logging.debug(message_debug(996, threading.current_thread().name, "OutputInternalMixin"))
+        self.info_queue_url = selfconfig.get("sqs_info_queue_url")
+        self.failure_queue_url = selfconfig.get("sqs_failure_queue_url")
+        self.sqs = boto3.client("sqs")
+
+    def send_to_failure_queue(self, message):
+        assert type(message) == str
+        response = self.sqs.send_message(
+            QueueUrl=self.failure_queue_url,
+            DelaySeconds=10,
+            MessageAttributes={},
+            MessageBody=(message),
+        )
+        self.config['sent_to_failure_queue'] += 1
+
+    def send_to_info_queue(self, message):
+        assert type(message) == str
+        response = self.sqs.send_message(
+            QueueUrl=self.info_queue_url,
+            DelaySeconds=10,
+            MessageAttributes={},
+            MessageBody=(message),
+        )
         self.config['sent_to_info_queue'] += 1
 
 # =============================================================================
