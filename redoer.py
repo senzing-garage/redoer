@@ -351,15 +351,15 @@ def get_parser():
         },
         'write-to-kafka': {
             "help": 'Read Senzing redo records from Senzing SDK and send to Kafka.',
-            "argument_aspects": ["engine", "monitoring", "kafka", "kafka-redo"],
+            "argument_aspects": ["engine", "threads", "monitoring", "kafka", "kafka-redo"],
         },
         'write-to-rabbitmq': {
             "help": 'Read Senzing redo records from Senzing SDK and send to RabbitMQ.',
-            "argument_aspects": ["engine", "monitoring", "rabbitmq", "rabbitmq-redo"],
+            "argument_aspects": ["engine", "threads", "monitoring", "rabbitmq", "rabbitmq-redo"],
         },
         'write-to-sqs': {
             "help": 'Read Senzing redo records from Senzing SDK and send to AWS SQS.',
-            "argument_aspects": ["engine", "monitoring", "sqs-redo"],
+            "argument_aspects": ["engine", "threads", "monitoring", "sqs-redo"],
         },
         'sleep': {
             "help": 'Do nothing but sleep. For Docker testing.',
