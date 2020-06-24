@@ -1463,7 +1463,7 @@ class InputSqsMixin():
                 AttributeNames=[],
                 MaxNumberOfMessages=1,
                 MessageAttributeNames=[],
-                VisibilityTimeout=0,
+                VisibilityTimeout=30,
                 WaitTimeSeconds=20
             )
 
