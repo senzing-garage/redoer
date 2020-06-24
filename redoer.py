@@ -2608,6 +2608,22 @@ def do_read_from_rabbitmq_withinfo(args):
     )
 
 
+def do_read_from_sqs_withinfo(args):
+    '''
+    Read Senzing redo records from AWS SQS and send to G2Engine.processWithInfo().
+    "withinfo" returned is sent to AWS SQS.
+    '''
+
+    options_to_defaults_map = {}
+
+    redo_processor(
+        args=args,
+        options_to_defaults_map=options_to_defaults_map,
+        process_thread=ProcessReadFromSqsWithinfoThread,
+        monitor_thread=MonitorThread
+    )
+
+
 def do_redo(args):
     '''
     Read Senzing redo records from Senzing SDK and send to G2Engine.process().
