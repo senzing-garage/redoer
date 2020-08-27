@@ -40,9 +40,9 @@ except ImportError:
     pass
 
 __all__ = []
-__version__ = "1.3.0"  # See https://www.python.org/dev/peps/pep-0396/
+__version__ = "1.3.2"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2020-06-24'
+__updated__ = '2020-08-27'
 
 # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 SENZING_PRODUCT_ID = "5010"
@@ -347,7 +347,7 @@ def get_parser():
         },
         'redo-withinfo-sqs': {
             "help": 'Read Senzing redo records from Senzing SDK, send to G2Engine.processWithInfo(), results sent to AWS SQS.',
-            "argument_aspects": ["engine", "threads", "monitoring", "sqs-redo", "sqs-info", "sqs-failure" ],
+            "argument_aspects": ["engine", "threads", "monitoring", "sqs-redo", "sqs-info", "sqs-failure"],
         },
         'write-to-kafka': {
             "help": 'Read Senzing redo records from Senzing SDK and send to Kafka.',
@@ -898,6 +898,11 @@ def get_configuration(args):
         if value:
             result[new_key] = value
 
+    # Add program information.
+
+    result['program_version'] = __version__
+    result['program_updated'] = __updated__
+
     # Special case: subcommand from command-line
 
     if args.subcommand:
@@ -1012,6 +1017,15 @@ class Governor:
     def govern(self, *args, **kwargs):
         return
 
+    def close(self):
+        return
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, type, value, traceback):
+        self.close()
+
 # -----------------------------------------------------------------------------
 # Class: InfoFilter
 # -----------------------------------------------------------------------------
@@ -1035,15 +1049,16 @@ class Rabbitmq:
     https://github.com/pika/pika/issues/1104
     '''
 
-    def __init__(self,
-            username,
-            password,
-            host,
-            queue_name,
-            exchange='',
-            delivery_mode=2,
-            prefetch_count=1,
-        ):
+    def __init__(
+        self,
+        username,
+        password,
+        host,
+        queue_name,
+        exchange='',
+        delivery_mode=2,
+        prefetch_count=1,
+    ):
 
         logging.debug(message_debug(995, threading.current_thread().name, "Rabbitmq"))
 
@@ -1147,7 +1162,8 @@ class RabbitmqSubscribeThread(threading.Thread):
         threading.Thread.__init__(self)
         logging.debug(message_debug(997, threading.current_thread().name, "RabbitmqSubscribeThread"))
 
-        logging.debug(message_debug(912,
+        logging.debug(message_debug(
+            912,
             threading.current_thread().name,
             host,
             queue_name,
@@ -1912,13 +1928,13 @@ class QueueInternalMixin():
 
 class ProcessRedoQueueThread(threading.Thread):
 
-    def __init__(self, config=None, g2_engine=None, g2_configuration_manager=None, redo_queue=None):
+    def __init__(self, config=None, g2_engine=None, g2_configuration_manager=None, redo_queue=None, governor=None):
         threading.Thread.__init__(self)
         logging.debug(message_debug(997, threading.current_thread().name, "ProcessRedoQueueThread"))
         self.config = config
         self.g2_engine = g2_engine
         self.g2_configuration_manager = g2_configuration_manager
-        self.governor = Governor(g2_engine=g2_engine, hint="redoer.ProcessRedoQueueThread")
+        self.governor = governor
         self.info_filter = InfoFilter(g2_engine=g2_engine)
         self.redo_queue = redo_queue
 
@@ -2421,6 +2437,7 @@ def redo_processor(
 
     g2_engine = get_g2_engine(config)
     g2_configuration_manager = get_g2_configuration_manager(config)
+    governor = Governor(g2_engine=g2_engine, hint="redoer")
 
     # Create threads for master process.
 
@@ -2445,7 +2462,8 @@ def redo_processor(
                 config=config,
                 g2_engine=g2_engine,
                 g2_configuration_manager=g2_configuration_manager,
-                redo_queue=redo_queue
+                redo_queue=redo_queue,
+                governor=governor
             )
             thread.name = "Process-0-{0}-{1}".format(thread.__class__.__name__, i)
             threads.append(thread)
@@ -2821,6 +2839,15 @@ if __name__ == "__main__":
 
     signal.signal(signal.SIGTERM, bootstrap_signal_handler)
     signal.signal(signal.SIGINT, bootstrap_signal_handler)
+
+    # Import plugins
+
+    try:
+        import senzing_governor
+        from senzing_governor import Governor
+        logging.info(message_info(180, senzing_governor.__file__))
+    except ImportError:
+        pass
 
     # Parse the command line arguments.
 

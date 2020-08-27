@@ -1,11 +1,11 @@
 ARG BASE_IMAGE=senzing/senzing-base:1.5.2
 FROM ${BASE_IMAGE}
 
-ENV REFRESHED_AT=2020-02-19
+ENV REFRESHED_AT=2020-08-27
 
 LABEL Name="senzing/redoer" \
       Maintainer="support@senzing.com" \
-      Version="1.1.1"
+      Version="1.3.2"
 
 HEALTHCHECK CMD ["/app/healthcheck.sh"]
 
@@ -26,8 +26,9 @@ RUN pip3 install \
       boto3 \
       configparser \
       confluent-kafka \
+      pika \
       psutil \
-      pika
+      psycopg2-binary
 
 # Copy files from repository.
 
