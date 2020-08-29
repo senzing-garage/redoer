@@ -42,7 +42,7 @@ except ImportError:
 __all__ = []
 __version__ = "1.3.2"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2020-08-27'
+__updated__ = '2020-08-29'
 
 # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 SENZING_PRODUCT_ID = "5010"
@@ -621,6 +621,7 @@ message_dictionary = {
     "180": "User-supplied Governor loaded from {0}.",
     "181": "Monitoring halted. No active workers.",
     "190": "AWS SQS Long-polling: No messages from {0}",
+    "203": "          WARNING: License will expire soon. Only {0} days left.",
     "292": "Configuration change detected.  Old: {0} New: {1}",
     "293": "For information on warnings and errors, see https://github.com/Senzing/stream-loader#errors",
     "294": "Version: {0}  Updated: {1}",
