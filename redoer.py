@@ -155,6 +155,16 @@ configuration_locator = {
         "env": "SENZING_RABBITMQ_DELIVERY_MODE",
         "cli": "rabbitmq-delivery-mode",
     },
+    "rabbitmq_exchange": {
+        "default": "senzing-rabbitmq-exchange",
+        "env": "SENZING_RABBITMQ_EXCHANGE",
+        "cli": "rabbitmq-exchange",
+    },
+    "rabbitmq_failure_exchange": {
+        "default": None,
+        "env": "SENZING_RABBITMQ_FAILURE_EXCHANGE",
+        "cli": "rabbitmq-failure-exchange",
+    },
     "rabbitmq_failure_host": {
         "default": None,
         "env": "SENZING_RABBITMQ_FAILURE_HOST",
@@ -170,6 +180,11 @@ configuration_locator = {
         "env": "SENZING_RABBITMQ_FAILURE_QUEUE",
         "cli": "rabbitmq-failure-queue",
     },
+    "rabbitmq_failure_routing_key": {
+        "default": "senzing.failure",
+        "env": "SENZING_RABBITMQ_FAILURE_ROUTING_KEY",
+        "cli": "rabbitmq-failure-routing-key",
+    },
     "rabbitmq_failure_username": {
         "default": None,
         "env": "SENZING_RABBITMQ_FAILURE_USERNAME",
@@ -179,6 +194,11 @@ configuration_locator = {
         "default": "localhost:5672",
         "env": "SENZING_RABBITMQ_HOST",
         "cli": "rabbitmq-host",
+    },
+    "rabbitmq_info_exchange": {
+        "default": None,
+        "env": "SENZING_RABBITMQ_INFO_EXCHANGE",
+        "cli": "rabbitmq-info-exchange",
     },
     "rabbitmq_info_host": {
         "default": None,
@@ -195,6 +215,11 @@ configuration_locator = {
         "env": "SENZING_RABBITMQ_INFO_QUEUE",
         "cli": "rabbitmq-info-queue",
     },
+    "rabbitmq_info_routing_key": {
+        "default": "senzing.info",
+        "env": "SENZING_RABBITMQ_INFO_ROUTING_KEY",
+        "cli": "rabbitmq-info-routing-key",
+    },
     "rabbitmq_info_username": {
         "default": None,
         "env": "SENZING_RABBITMQ_INFO_USERNAME",
@@ -209,6 +234,11 @@ configuration_locator = {
         "default": 50,
         "env": "SENZING_RABBITMQ_PREFETCH_COUNT",
         "cli": "rabbitmq-prefetch-count",
+    },
+    "rabbitmq_redo_exchange": {
+        "default": None,
+        "env": "SENZING_RABBITMQ_INFO_EXCHANGE",
+        "cli": "rabbitmq-info-exchange",
     },
     "rabbitmq_redo_host": {
         "default": None,
@@ -225,10 +255,20 @@ configuration_locator = {
         "env": "SENZING_RABBITMQ_REDO_QUEUE",
         "cli": "rabbitmq-redo-queue",
     },
+    "rabbitmq_redo_routing_key": {
+        "default": "senzing.redo",
+        "env": "SENZING_RABBITMQ_REDO_ROUTING_KEY",
+        "cli": "rabbitmq-redo-routing-key",
+    },
     "rabbitmq_redo_username": {
         "default": None,
         "env": "SENZING_RABBITMQ_REDO_USERNAME",
         "cli": "rabbitmq-redo-username",
+    },
+    "rabbitmq_use_existing_entities": {
+        "default": True,
+        "env": "SENZING_RABBITMQ_USE_EXISTING_ENTITIES",
+        "cli": "rabbitmq-use-existing-entities",
     },
     "rabbitmq_username": {
         "default": "user",
@@ -445,6 +485,11 @@ def get_parser():
             },
         },
         "rabbitmq": {
+            "--rabbitmq-exchange": {
+                "dest": "rabbitmq_exchange",
+                "metavar": "SENZING_RABBITMQ_EXCHANGE",
+                "help": "RabbitMQ exchange. Default: SENZING_RABBITMQ_EXCHANGE"
+            },
             "--rabbitmq-host": {
                 "dest": "rabbitmq_host",
                 "metavar": "SENZING_RABBITMQ_HOST",
@@ -460,8 +505,23 @@ def get_parser():
                 "metavar": "SENZING_RABBITMQ_USERNAME",
                 "help": "RabbitMQ username. Default: user"
             },
+            "--rabbitmq-username": {
+                "dest": "rabbitmq_username",
+                "metavar": "SENZING_RABBITMQ_USERNAME",
+                "help": "RabbitMQ username. Default: user"
+            },
+            "--rabbitmq-use-existing-entities": {
+                "dest": "rabbitmq_use_existing_entities",
+                "metavar": "SENZING_RABBITMQ_USE_EXISTING_ENTITIES",
+                "help": "Connect to an existing exchange and queue using their settings. An error is thrown if the exchange or queue does not exist. If False, it will create the exchange and queue if they do not exist. If they exist, then it will attempt to connect, checking the settings match. Default: True"
+            },
         },
         "rabbitmq-failure": {
+            "--rabbitmq-failure-exchange": {
+                "dest": "rabbitmq_failure_exchange",
+                "metavar": "SENZING_RABBITMQ_FAILURE_EXCHANGE",
+                "help": "RabbitMQ exchange. Default: SENZING_RABBITMQ_EXCHANGE"
+            },
             "--rabbitmq-failure-host": {
                 "dest": "rabbitmq_failure_host",
                 "metavar": "SENZING_RABBITMQ_FAILURE_HOST",
@@ -477,6 +537,11 @@ def get_parser():
                 "metavar": "SENZING_RABBITMQ_FAILURE_QUEUE",
                 "help": "RabbitMQ queue for failures. Default: senzing-rabbitmq-failure-queue"
             },
+            "--rabbitmq-failure-routing-key": {
+                "dest": "rabbitmq_failure_routing_key",
+                "metavar": "SENZING_RABBITMQ_FAILURE_ROUTING_KEY",
+                "help": "RabbitMQ routing key. Default: senzing.failure"
+            },
             "--rabbitmq-failure-username": {
                 "dest": "rabbitmq_failure_username",
                 "metavar": "SENZING_RABBITMQ_FAILURE_USERNAME",
@@ -484,6 +549,11 @@ def get_parser():
             },
         },
         "rabbitmq-info": {
+            "--rabbitmq-info-exchange": {
+                "dest": "rabbitmq_info_exchange",
+                "metavar": "SENZING_RABBITMQ_INFO_EXCHANGE",
+                "help": "RabbitMQ exchange. Default: SENZING_RABBITMQ_EXCHANGE"
+            },
             "--rabbitmq-info-host": {
                 "dest": "rabbitmq_info_host",
                 "metavar": "SENZING_RABBITMQ_INFO_HOST",
@@ -499,6 +569,11 @@ def get_parser():
                 "metavar": "SENZING_RABBITMQ_INFO_QUEUE",
                 "help": "RabbitMQ queue for info. Default: senzing-rabbitmq-info-queue"
             },
+            "--rabbitmq-info-routing-key": {
+                "dest": "rabbitmq_info_routing_key",
+                "metavar": "SENZING_RABBITMQ_INFO_ROUTING_KEY",
+                "help": "RabbitMQ routing key. Default: senzing.info"
+            },
             "--rabbitmq-info-username": {
                 "dest": "rabbitmq_info_username",
                 "metavar": "SENZING_RABBITMQ_INFO_USERNAME",
@@ -506,6 +581,11 @@ def get_parser():
             },
         },
         "rabbitmq-redo": {
+            "--rabbitmq-redo-exchange": {
+                "dest": "rabbitmq_redo_exchange",
+                "metavar": "SENZING_RABBITMQ_REDO_EXCHANGE",
+                "help": "RabbitMQ exchange. Default: SENZING_RABBITMQ_EXCHANGE"
+            },
             "--rabbitmq-redo-host": {
                 "dest": "rabbitmq_redo_host",
                 "metavar": "SENZING_RABBITMQ_REDO_HOST",
@@ -520,6 +600,11 @@ def get_parser():
                 "dest": "rabbitmq_redo_queue",
                 "metavar": "SENZING_RABBITMQ_REDO_QUEUE",
                 "help": "RabbitMQ queue. Default: senzing-rabbitmq-redo-queue"
+            },
+            "--rabbitmq-redo-routing-key": {
+                "dest": "rabbitmq_redo_routing_key",
+                "metavar": "SENZING_RABBITMQ_REDO_ROUTING_KEY",
+                "help": "RabbitMQ routing key. Default: senzing.redo"
             },
             "--rabbitmq-redo-username": {
                 "dest": "rabbitmq_redo_username",
@@ -644,6 +729,8 @@ message_dictionary = {
     "500": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}E",
     "561": "Thread: {0} Unknown RabbitMQ error when connecting: {1}",
     "562": "Thread: {0} Could not connect to RabbitMQ host at {2}. The host name maybe wrong, it may not be ready, or your credentials are incorrect. See the RabbitMQ log for more details. Error: {1}",
+    "563": "Thread: {0} The exchange {1} and/or the queue {2} do not exist. Create them, or set rabbitmq-use-existing-entities to False to have stream-producer create them.",
+    "564": "Thread: {0} The exchange {1} and/or the queue {2} exist but are configured with unexpected parameters. Set rabbitmq-use-existing-entities to True to connect to the preconfigured exchange and queue, or delete the existing exchange and queue and try again.",
     "695": "Unknown database scheme '{0}' in database url '{1}'",
     "696": "Bad SENZING_SUBCOMMAND: {0}.",
     "697": "No processing done.",
@@ -911,7 +998,10 @@ def get_configuration(args):
 
     # Special case: Change boolean strings to booleans.
 
-    booleans = ['debug']
+    booleans = [
+        'debug',
+        'rabbitmq_use_existing_entities',
+    ]
     for boolean in booleans:
         boolean_value = result.get(boolean)
         if isinstance(boolean_value, str):
@@ -1056,7 +1146,9 @@ class Rabbitmq:
         password,
         host,
         queue_name,
-        exchange='',
+        exchange,
+        routing_key,
+        passive,
         delivery_mode=2,
         prefetch_count=1,
     ):
@@ -1078,6 +1170,18 @@ class Rabbitmq:
         self.delivery_mode = delivery_mode
         self.exchange = exchange
         self.queue_name = queue_name
+        self.passive = passive
+        self.routing_key = routing_key
+
+        print("self.delivery_mode " + str(self.delivery_mode))
+        print("self.exchange " + str(self.exchange))
+        print("self.queue_name " + str(self.queue_name))
+        print("self.passive " + str(self.passive))
+        print("self.routing_key " + str(self.routing_key))
+
+        print("username " + str(username))
+        print("password " + str(password))
+        print("host " + str(host))
 
         # Create a RabbitMQ connection and channel.
 
@@ -1095,15 +1199,35 @@ class Rabbitmq:
 
             self.connection = pika.BlockingConnection(connection_parameters)
             self.channel = self.connection.channel()
-            self.channel.queue_declare(
-                queue=self.queue_name
-            )
             self.channel.basic_qos(
                 prefetch_count=prefetch_count,
             )
+            self.channel.exchange_declare(
+                exchange=self.exchange,
+                passive=passive
+            )
+            message_queue = self.channel.queue_declare(
+                queue=self.queue_name,
+                passive=passive
+            )
+
+            # if we are actively declaring, then we need to bind. If passive declare, we assume it is already set up
+            if not passive:
+                self.channel.queue_bind(
+                    exchange=self.exchange,
+                    routing_key=self.routing_key,
+                    queue=message_queue.method.queue
+                )
 
         except pika.exceptions.AMQPConnectionError as err:
             exit_error(562, threading.current_thread().name, err, host)
+        except (pika.exceptions.ChannelClosedByBroker) as err:
+            if err.reply_code == 404:
+                exit_error(563, threading.current_thread().name, self.exchange, self.rabbitmq_queue)
+            elif err.reply_code == 406:
+                exit_error(564, threading.current_thread().name, self.exchange, self.rabbitmq_queue)
+            else:
+                exit_error(561, threading.current_thread().name, err)
         except BaseException as err:
             exit_error(561, threading.current_thread().name, err)
 
@@ -1141,7 +1265,7 @@ class Rabbitmq:
         try:
             self.channel.basic_publish(
                 exchange=self.exchange,
-                routing_key=self.queue_name,
+                routing_key=self.routing_key,
                 body=message_bytes,
                 properties=pika.BasicProperties(
                     delivery_mode=self.delivery_mode,
@@ -1159,7 +1283,7 @@ class RabbitmqSubscribeThread(threading.Thread):
     Wrap RabbitMQ behind a Python Queue.
     '''
 
-    def __init__(self, internal_queue, host, queue_name, username, password, prefetch_count):
+    def __init__(self, internal_queue, host, exchange, queue_name, routing_key, username, password, passive, prefetch_count):
         threading.Thread.__init__(self)
         logging.debug(message_debug(997, threading.current_thread().name, "RabbitmqSubscribeThread"))
 
@@ -1181,6 +1305,9 @@ class RabbitmqSubscribeThread(threading.Thread):
             password=password,
             host=host,
             queue_name=queue_name,
+            exchange=exchange,
+            routing_key=routing_key,
+            passive=passive,
             prefetch_count=prefetch_count
         )
 
@@ -1426,9 +1553,12 @@ class InputRabbitmqMixin():
         redo_thread = RabbitmqSubscribeThread(
             self.input_rabbitmq_mixin_queue,
             self.config.get("rabbitmq_redo_host"),
+            self.config.get("rabbitmq_redo_exchange"),
             self.config.get("rabbitmq_redo_queue"),
+            self.config.get("rabbitmq_redo_routing_key"),
             self.config.get("rabbitmq_redo_username"),
             self.config.get("rabbitmq_redo_password"),
+            self.config.get("rabbitmq_use_existing_entities"),
             self.config.get("rabbitmq_prefetch_count")
         )
         redo_thread.name = "{0}-{1}".format(threading.current_thread().name, "redo")
@@ -1682,6 +1812,9 @@ class ExecuteWriteToRabbitmqMixin():
             password=self.config.get("rabbitmq_redo_password"),
             host=self.config.get("rabbitmq_redo_host"),
             queue_name=self.config.get("rabbitmq_redo_queue"),
+            exchange=self.config.get("rabbitmq_redo_exchange"),
+            routing_key=self.config.get("rabbitmq_redo_routing_key"),
+            passive=self.config.get("rabbitmq_use_existing_entities"),
         )
 
     def process_redo_record(self, redo_record=None):
@@ -1836,6 +1969,9 @@ class OutputRabbitmqMixin():
             password=self.config.get("rabbitmq_info_password"),
             host=self.config.get("rabbitmq_info_host"),
             queue_name=self.config.get("rabbitmq_info_queue"),
+            exchange=self.config.get("rabbitmq_info_exchange"),
+            routing_key=self.config.get("rabbitmq_info_routing_key"),
+            passive=self.config.get("rabbitmq_use_existing_entities"),
         )
 
         # Connect to RabbitMQ for "failure".
@@ -1845,6 +1981,9 @@ class OutputRabbitmqMixin():
             password=self.config.get("rabbitmq_failure_password"),
             host=self.config.get("rabbitmq_failure_host"),
             queue_name=self.config.get("rabbitmq_failure_queue"),
+            exchange=self.config.get("rabbitmq_failure_exchange"),
+            routing_key=self.config.get("rabbitmq_failure_routing_key"),
+            passive=self.config.get("rabbitmq_use_existing_entities"),
         )
 
     def send_to_failure_queue(self, message):
@@ -2552,6 +2691,7 @@ def do_read_from_rabbitmq(args):
     '''
 
     options_to_defaults_map = {
+        "rabbitmq_redo_exchange": "rabbitmq_exchange",
         "rabbitmq_redo_host": "rabbitmq_host",
         "rabbitmq_redo_password": "rabbitmq_password",
         "rabbitmq_redo_username": "rabbitmq_username",
@@ -2608,12 +2748,15 @@ def do_read_from_rabbitmq_withinfo(args):
     '''
 
     options_to_defaults_map = {
+        "rabbitmq_failure_exchange": "rabbitmq_exchange",
         "rabbitmq_failure_host": "rabbitmq_host",
         "rabbitmq_failure_password": "rabbitmq_password",
         "rabbitmq_failure_username": "rabbitmq_username",
+        "rabbitmq_info_exchange": "rabbitmq_exchange",
         "rabbitmq_info_host": "rabbitmq_host",
         "rabbitmq_info_password": "rabbitmq_password",
         "rabbitmq_info_username": "rabbitmq_username",
+        "rabbitmq_redo_exchange": "rabbitmq_exchange",
         "rabbitmq_redo_host": "rabbitmq_host",
         "rabbitmq_redo_password": "rabbitmq_password",
         "rabbitmq_redo_username": "rabbitmq_username",
@@ -2684,9 +2827,11 @@ def do_redo_withinfo_rabbitmq(args):
     '''
 
     options_to_defaults_map = {
+        "rabbitmq_failure_exchange": "rabbitmq_exchange",
         "rabbitmq_failure_host": "rabbitmq_host",
         "rabbitmq_failure_password": "rabbitmq_password",
         "rabbitmq_failure_username": "rabbitmq_username",
+        "rabbitmq_info_exchange": "rabbitmq_exchange",
         "rabbitmq_info_host": "rabbitmq_host",
         "rabbitmq_info_password": "rabbitmq_password",
         "rabbitmq_info_username": "rabbitmq_username",
@@ -2776,6 +2921,7 @@ def do_write_to_rabbitmq(args):
     '''
 
     options_to_defaults_map = {
+        "rabbitmq_redo_exchange": "rabbitmq_exchange",
         "rabbitmq_redo_host": "rabbitmq_host",
         "rabbitmq_redo_password": "rabbitmq_password",
         "rabbitmq_redo_username": "rabbitmq_username",
