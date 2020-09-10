@@ -505,11 +505,6 @@ def get_parser():
                 "metavar": "SENZING_RABBITMQ_USERNAME",
                 "help": "RabbitMQ username. Default: user"
             },
-            "--rabbitmq-username": {
-                "dest": "rabbitmq_username",
-                "metavar": "SENZING_RABBITMQ_USERNAME",
-                "help": "RabbitMQ username. Default: user"
-            },
             "--rabbitmq-use-existing-entities": {
                 "dest": "rabbitmq_use_existing_entities",
                 "metavar": "SENZING_RABBITMQ_USE_EXISTING_ENTITIES",
@@ -1173,16 +1168,6 @@ class Rabbitmq:
         self.passive = passive
         self.routing_key = routing_key
 
-        print("self.delivery_mode " + str(self.delivery_mode))
-        print("self.exchange " + str(self.exchange))
-        print("self.queue_name " + str(self.queue_name))
-        print("self.passive " + str(self.passive))
-        print("self.routing_key " + str(self.routing_key))
-
-        print("username " + str(username))
-        print("password " + str(password))
-        print("host " + str(host))
-
         # Create a RabbitMQ connection and channel.
 
         try:
@@ -1223,9 +1208,9 @@ class Rabbitmq:
             exit_error(562, threading.current_thread().name, err, host)
         except (pika.exceptions.ChannelClosedByBroker) as err:
             if err.reply_code == 404:
-                exit_error(563, threading.current_thread().name, self.exchange, self.rabbitmq_queue)
+                exit_error(563, threading.current_thread().name, self.exchange, self.queue_name)
             elif err.reply_code == 406:
-                exit_error(564, threading.current_thread().name, self.exchange, self.rabbitmq_queue)
+                exit_error(564, threading.current_thread().name, self.exchange, self.queue_name)
             else:
                 exit_error(561, threading.current_thread().name, err)
         except BaseException as err:
