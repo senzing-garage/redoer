@@ -40,9 +40,9 @@ except ImportError:
     pass
 
 __all__ = []
-__version__ = "1.3.2"  # See https://www.python.org/dev/peps/pep-0396/
+__version__ = "1.3.3"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2020-08-29'
+__updated__ = '2020-09-22'
 
 # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 SENZING_PRODUCT_ID = "5010"
@@ -84,6 +84,11 @@ configuration_locator = {
         "default": None,
         "env": "SENZING_ENGINE_CONFIGURATION_JSON",
         "cli": "engine-configuration-json"
+    },
+    "exit_on_thread_termination": {
+        "default": False,
+        "env": "SENZING_EXIT_ON_THREAD_TERMINATION",
+        "cli": "exit-on-thread-termination"
     },
     "expiration_warning_in_days": {
         "default": 30,
@@ -689,6 +694,7 @@ message_dictionary = {
     "129": "{0} is running.",
     "130": "{0} has exited.",
     "131": "Adding redo record to redo queue: {0}",
+    "132": "Thread: {0} is exiting in response to SENZING_EXIT_ON_THREAD_TERMINATION.",
     "160": "{0} LICENSE {0}",
     "161": "          Version: {0} ({1})",
     "162": "         Customer: {0}",
@@ -741,6 +747,7 @@ message_dictionary = {
     "709": "Thread: {0} G2Engine.process() err: {1}",
     "721": "Running low on workers.  May need to restart",
     "722": "Thread: {0} Kafka commit failed for {1}",
+    "723": "Scheduling termination for workers. Total workers: {0}  Active workers: {1}",
     "730": "There are not enough safe characters to do the translation. Unsafe Characters: {0}; Safe Characters: {1}",
     "885": "License has expired.",
     "886": "G2Engine.addRecord() bad return code: {0}; JSON: {1}",
@@ -995,6 +1002,7 @@ def get_configuration(args):
 
     booleans = [
         'debug',
+        'exit_on_thread_termination',        
         'rabbitmq_use_existing_entities',
     ]
     for boolean in booleans:
@@ -1009,7 +1017,7 @@ def get_configuration(args):
     # Special case: Change integer strings to integers.
 
     integers = [
-        "delay_in_seconds",
+        'delay_in_seconds',
         'expiration_warning_in_days',
         'log_license_period_in_seconds',
         'monitoring_period_in_seconds',
@@ -1282,6 +1290,7 @@ class RabbitmqSubscribeThread(threading.Thread):
 
         self.internal_queue = internal_queue
         self.queue_name = queue_name
+        self.termination = False
 
         # Connect to RabbitMQ.
 
@@ -1295,6 +1304,9 @@ class RabbitmqSubscribeThread(threading.Thread):
             passive=passive,
             prefetch_count=prefetch_count
         )
+
+    def schedule_termination(self):
+        self.termination = True
 
     def callback(self, message):
         '''
@@ -1345,6 +1357,7 @@ class MonitorThread(threading.Thread):
 
         last_log_license = time.time()
         log_license_period_in_seconds = self.config.get("log_license_period_in_seconds")
+        exit_on_thread_termination = self.config.get("exit_on_thread_termination")
 
         # Define monitoring report interval.
 
@@ -1372,6 +1385,14 @@ class MonitorThread(threading.Thread):
 
             if (active_workers / float(len(self.workers))) < 0.5:
                 logging.warning(message_warning(721))
+
+            # If requested, terminate all threads if any thread is not active.
+
+            if exit_on_thread_termination:
+                if len(self.workers) != active_workers:
+                    logging.warning(message_warning(723, active_workers, len(self.workers)))
+                    for worker in self.workers:
+                        worker.schedule_termination()
 
             # Calculate times.
 
@@ -2057,11 +2078,12 @@ class ProcessRedoQueueThread(threading.Thread):
         threading.Thread.__init__(self)
         logging.debug(message_debug(997, threading.current_thread().name, "ProcessRedoQueueThread"))
         self.config = config
-        self.g2_engine = g2_engine
         self.g2_configuration_manager = g2_configuration_manager
+        self.g2_engine = g2_engine
         self.governor = governor
         self.info_filter = InfoFilter(g2_engine=g2_engine)
         self.redo_queue = redo_queue
+        self.termination = False
 
     def filter_info_message(self, message=None):
         assert type(message) == str
@@ -2069,6 +2091,9 @@ class ProcessRedoQueueThread(threading.Thread):
 
     def govern(self):
         return self.governor.govern()
+
+    def schedule_termination(self):
+        self.termination = True
 
     def is_g2_default_configuration_changed(self):
 
@@ -2122,6 +2147,12 @@ class ProcessRedoQueueThread(threading.Thread):
 
             self.process_redo_record(redo_record)
 
+            # If requested to terminate, leave loop.
+
+            if self.termination:
+                logging.info(message_info(132, threading.current_thread().name))
+                break
+
         # Log message for thread exiting.
 
         logging.info(message_info(130, threading.current_thread().name))
@@ -2139,6 +2170,10 @@ class QueueRedoRecordsThread(threading.Thread):
         self.config = config
         self.g2_engine = g2_engine
         self.redo_queue = redo_queue
+        self.termination = False
+
+    def schedule_termination(self):
+        self.termination = True
 
     def redo_records(self):
         '''A generator for producing Senzing redo records.'''
@@ -2155,6 +2190,12 @@ class QueueRedoRecordsThread(threading.Thread):
         # Read forever.
 
         while True:
+
+            # If requested to terminate, leave loop.
+
+            if self.termination:
+                logging.info(message_info(132, threading.current_thread().name))
+                break
 
             # Read a Senzing redo record.
 
