@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 [markdownlint](https://dlaa.me/markdownlint/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.3] - 2020-09-22
+
+### Added in 1.3.3
+
+- Support for RabbitMQ exchanges
+- Support for `SENZING_EXIT_ON_THREAD_TERMINATION`
+
 ## [1.3.2] - 2020-08-29
 
 ### Added in 1.3.2
