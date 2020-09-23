@@ -42,7 +42,7 @@ except ImportError:
 __all__ = []
 __version__ = "1.3.3"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2020-09-22'
+__updated__ = '2020-09-23'
 
 # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 SENZING_PRODUCT_ID = "5010"
@@ -694,7 +694,6 @@ message_dictionary = {
     "129": "{0} is running.",
     "130": "{0} has exited.",
     "131": "Adding redo record to redo queue: {0}",
-    "132": "Thread: {0} is exiting in response to SENZING_EXIT_ON_THREAD_TERMINATION.",
     "160": "{0} LICENSE {0}",
     "161": "          Version: {0} ({1})",
     "162": "         Customer: {0}",
@@ -747,7 +746,7 @@ message_dictionary = {
     "709": "Thread: {0} G2Engine.process() err: {1}",
     "721": "Running low on workers.  May need to restart",
     "722": "Thread: {0} Kafka commit failed for {1}",
-    "723": "Scheduling termination for workers. Total workers: {0}  Active workers: {1}",
+    "723": "Detected inactive thread. Total threads: {0}  Active threads: {1}",
     "730": "There are not enough safe characters to do the translation. Unsafe Characters: {0}; Safe Characters: {1}",
     "885": "License has expired.",
     "886": "G2Engine.addRecord() bad return code: {0}; JSON: {1}",
@@ -1002,7 +1001,7 @@ def get_configuration(args):
 
     booleans = [
         'debug',
-        'exit_on_thread_termination',        
+        'exit_on_thread_termination',
         'rabbitmq_use_existing_entities',
     ]
     for boolean in booleans:
@@ -1290,7 +1289,6 @@ class RabbitmqSubscribeThread(threading.Thread):
 
         self.internal_queue = internal_queue
         self.queue_name = queue_name
-        self.termination = False
 
         # Connect to RabbitMQ.
 
@@ -1304,9 +1302,6 @@ class RabbitmqSubscribeThread(threading.Thread):
             passive=passive,
             prefetch_count=prefetch_count
         )
-
-    def schedule_termination(self):
-        self.termination = True
 
     def callback(self, message):
         '''
@@ -1390,9 +1385,7 @@ class MonitorThread(threading.Thread):
 
             if exit_on_thread_termination:
                 if len(self.workers) != active_workers:
-                    logging.warning(message_warning(723, active_workers, len(self.workers)))
-                    for worker in self.workers:
-                        worker.schedule_termination()
+                    exit_error_program(723, active_workers, len(self.workers))
 
             # Calculate times.
 
@@ -2083,7 +2076,6 @@ class ProcessRedoQueueThread(threading.Thread):
         self.governor = governor
         self.info_filter = InfoFilter(g2_engine=g2_engine)
         self.redo_queue = redo_queue
-        self.termination = False
 
     def filter_info_message(self, message=None):
         assert type(message) == str
@@ -2091,9 +2083,6 @@ class ProcessRedoQueueThread(threading.Thread):
 
     def govern(self):
         return self.governor.govern()
-
-    def schedule_termination(self):
-        self.termination = True
 
     def is_g2_default_configuration_changed(self):
 
@@ -2147,12 +2136,6 @@ class ProcessRedoQueueThread(threading.Thread):
 
             self.process_redo_record(redo_record)
 
-            # If requested to terminate, leave loop.
-
-            if self.termination:
-                logging.info(message_info(132, threading.current_thread().name))
-                break
-
         # Log message for thread exiting.
 
         logging.info(message_info(130, threading.current_thread().name))
@@ -2170,10 +2153,6 @@ class QueueRedoRecordsThread(threading.Thread):
         self.config = config
         self.g2_engine = g2_engine
         self.redo_queue = redo_queue
-        self.termination = False
-
-    def schedule_termination(self):
-        self.termination = True
 
     def redo_records(self):
         '''A generator for producing Senzing redo records.'''
@@ -2190,12 +2169,6 @@ class QueueRedoRecordsThread(threading.Thread):
         # Read forever.
 
         while True:
-
-            # If requested to terminate, leave loop.
-
-            if self.termination:
-                logging.info(message_info(132, threading.current_thread().name))
-                break
 
             # Read a Senzing redo record.
 
@@ -2430,6 +2403,13 @@ def exit_error(index, *args):
     logging.error(message_error(index, *args))
     logging.error(message_error(698))
     sys.exit(1)
+
+
+def exit_error_program(index, *args):
+    ''' Log error message and exit program. '''
+    logging.error(message_error(index, *args))
+    logging.error(message_error(698))
+    os._exit(1)
 
 
 def exit_silently():
