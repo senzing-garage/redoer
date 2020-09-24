@@ -10,27 +10,26 @@
 #        Senzing redo record.
 # -----------------------------------------------------------------------------
 
+from urllib.parse import urlparse, urlunparse
 import argparse
-import datetime
-from glob import glob
 import boto3
+import confluent_kafka
+import datetime
 import json
 import linecache
 import logging
 import multiprocessing
 import os
 import pika
+import re
 import signal
 import string
+import subprocess
 import sys
 import threading
 import time
-from urllib.parse import urlparse, urlunparse
-
-import confluent_kafka
 
 # Import Senzing libraries.
-
 try:
     from G2ConfigMgr import G2ConfigMgr
     from G2Engine import G2Engine
@@ -42,11 +41,9 @@ except ImportError:
 __all__ = []
 __version__ = "1.3.3"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2020-09-23'
+__updated__ = '2020-09-24'
 
-# See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
-SENZING_PRODUCT_ID = "5010"
-
+SENZING_PRODUCT_ID = "5010"  # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 log_format = '%(asctime)s %(message)s'
 
 # Working with bytes.
@@ -125,20 +122,25 @@ configuration_locator = {
         "env": "SENZING_KAFKA_INFO_TOPIC",
         "cli": "kafka-info-topic"
     },
-    "kafka_redo_group": {
-        "default": "senzing-kafka-redo-group",
-        "env": "SENZING_KAFKA_REDO_GROUP",
-        "cli": "kafka-redo-group"
-    },
     "kafka_redo_bootstrap_server": {
         "default": None,
         "env": "SENZING_KAFKA_REDO_BOOTSTRAP_SERVER",
         "cli": "kafka-redo-bootstrap-server",
     },
+    "kafka_redo_group": {
+        "default": "senzing-kafka-redo-group",
+        "env": "SENZING_KAFKA_REDO_GROUP",
+        "cli": "kafka-redo-group"
+    },
     "kafka_redo_topic": {
         "default": "senzing-kafka-redo-topic",
         "env": "SENZING_KAFKA_REDO_TOPIC",
         "cli": "kafka-redo-topic"
+    },
+    "log_level_parameter": {
+        "default": "info",
+        "env": "SENZING_LOG_LEVEL",
+        "cli": "log-level-parameter"
     },
     "log_license_period_in_seconds": {
         "default": 60 * 60 * 24,
@@ -149,6 +151,11 @@ configuration_locator = {
         "default": 60 * 10,
         "env": "SENZING_MONITORING_PERIOD_IN_SECONDS",
         "cli": "monitoring-period-in-seconds",
+    },
+    "pstack_pid": {
+        "default": "1",
+        "env": "SENZING_PSTACK_PID",
+        "cli": "pstack-pid",
     },
     "queue_maxsize": {
         "default": 10,
@@ -774,6 +781,8 @@ message_dictionary = {
     "917": "Thread: {0} Queue: {1} Subscribe Message: {2}",
     "918": "Thread: {0} redo_records() -> {1}",
     "919": "Thread: {0} processing redo record: {1}",
+    "920": "gdb STDOUT: {0}",
+    "921": "gdb STDERR: {0}",
     "995": "Thread: {0} Using Class: {1}",
     "996": "Thread: {0} Using Mixin: {1}",
     "997": "Thread: {0} Using Thread: {1}",
@@ -991,6 +1000,11 @@ def get_configuration(args):
 
     result['program_version'] = __version__
     result['program_updated'] = __updated__
+
+    # Add "run_as" information.
+
+    result['run_as_uid'] = os.getuid()
+    result['run_as_gid'] = os.getgid()
 
     # Special case: subcommand from command-line
 
@@ -1329,7 +1343,14 @@ class MonitorThread(threading.Thread):
     def __init__(self, config=None, g2_engine=None, workers=None):
         threading.Thread.__init__(self)
         self.config = config
+        self.digits_regex_pattern = re.compile(':\d+$')
+        self.exit_on_thread_termination = self.config.get("exit_on_thread_termination")
         self.g2_engine = g2_engine
+        self.in_regex_pattern = re.compile('\sin\s')
+        self.log_level_parameter = config.get("log_level_parameter")
+        self.log_license_period_in_seconds = self.config.get("log_license_period_in_seconds")
+        self.pstack_pid = config.get("pstack_pid")
+        self.sleep_time_in_seconds = self.config.get('monitoring_period_in_seconds')
         self.workers = workers
 
     def run(self):
@@ -1351,12 +1372,6 @@ class MonitorThread(threading.Thread):
         }
 
         last_log_license = time.time()
-        log_license_period_in_seconds = self.config.get("log_license_period_in_seconds")
-        exit_on_thread_termination = self.config.get("exit_on_thread_termination")
-
-        # Define monitoring report interval.
-
-        sleep_time_in_seconds = self.config.get('monitoring_period_in_seconds')
 
         # Sleep-monitor loop.
 
@@ -1367,7 +1382,7 @@ class MonitorThread(threading.Thread):
 
         while active_workers > 0:
 
-            time.sleep(sleep_time_in_seconds)
+            time.sleep(self.sleep_time_in_seconds)
 
             # Calculate active Threads.
 
@@ -1383,7 +1398,7 @@ class MonitorThread(threading.Thread):
 
             # If requested, terminate all threads if any thread is not active.
 
-            if exit_on_thread_termination:
+            if self.exit_on_thread_termination:
                 if len(self.workers) != active_workers:
                     exit_error_program(723, active_workers, len(self.workers))
 
@@ -1395,7 +1410,7 @@ class MonitorThread(threading.Thread):
 
             # Log license periodically to show days left in license.
 
-            if elapsed_log_license > log_license_period_in_seconds:
+            if elapsed_log_license > self.log_license_period_in_seconds:
                 log_license(self.config)
                 last_log_license = now
 
@@ -1428,6 +1443,57 @@ class MonitorThread(threading.Thread):
             self.g2_engine.stats(g2_engine_stats_response)
             g2_engine_stats_dictionary = json.loads(g2_engine_stats_response.decode())
             logging.info(message_info(125, json.dumps(g2_engine_stats_dictionary, sort_keys=True)))
+
+            # If requested, debug stacks.
+
+            if self.log_level_parameter == "debug":
+                completed_process = None
+                try:
+
+                    # Run gdb to get stacks.
+
+                    completed_process = subprocess.run(
+                        ["gdb", "-q", "-p", self.pstack_pid, "-batch", "-ex", "thread apply all bt"],
+                        capture_output=True)
+
+                except Exception as err:
+                    logging.warning(message_warning(999, err))
+
+                if completed_process is not None:
+
+                    # Process gdb output.
+
+                    counter = 0
+                    stdout_dict = {}
+                    stdout_lines = str(completed_process.stdout).split('\\n')
+                    for stdout_line in stdout_lines:
+
+                        # Filter lines.
+
+                        if self.digits_regex_pattern.search(stdout_line) is not None and self.in_regex_pattern.search(stdout_line) is not None:
+
+                            # Format lines.
+
+                            counter += 1
+                            line_parts = stdout_line.split()
+                            output_line = "{0:<3} {1} {2}".format(line_parts[0], line_parts[3], line_parts[-1].rsplit('/', 1)[-1])
+                            stdout_dict[str(counter).zfill(4)] = output_line
+
+                    # Log STDOUT.
+
+                    stdout_json = json.dumps(stdout_dict)
+                    logging.debug(message_debug(920, stdout_json))
+
+                    # Log STDERR.
+
+                    counter = 0
+                    stderr_dict = {}
+                    stderr_lines = str(completed_process.stderr).split('\\n')
+                    for stderr_line in stderr_lines:
+                        counter += 1
+                        stderr_dict[str(counter).zfill(4)] = stderr_line
+                    stderr_json = json.dumps(stderr_dict)
+                    logging.debug(message_debug(921, stderr_json))
 
         logging.info(message_info(181))
 
@@ -1781,7 +1847,7 @@ class ExecuteWriteToKafkaMixin():
         Simply send to Kafka.
         '''
 
-        logging.debug(message_debug(916, threading.current_thread().name, self.kafka_redo_topic, redo_record))
+        logging.debug(message_debug(921, threading.current_thread().name, self.kafka_redo_topic, redo_record))
         assert type(redo_record) == str
 
         try:
