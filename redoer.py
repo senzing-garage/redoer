@@ -41,7 +41,7 @@ except ImportError:
 __all__ = []
 __version__ = "1.3.3"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2020-09-25'
+__updated__ = '2020-11-30'
 
 SENZING_PRODUCT_ID = "5010"  # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 log_format = '%(asctime)s %(message)s'
@@ -783,6 +783,7 @@ message_dictionary = {
     "919": "Thread: {0} processing redo record: {1}",
     "920": "gdb STDOUT: {0}",
     "921": "gdb STDERR: {0}",
+    "922": "Timing: {0}",
     "995": "Thread: {0} Using Class: {1}",
     "996": "Thread: {0} Using Mixin: {1}",
     "997": "Thread: {0} Using Thread: {1}",
@@ -2196,11 +2197,15 @@ class ProcessRedoQueueThread(threading.Thread):
 
             # Invoke Governor.
 
+            logging.debug(message_debug(922, threading.current_thread().name, "Before govern()"))
             self.govern()
 
             # Process record based on the Mixin's process_redo_record() method.
 
+            logging.debug(message_debug(922, threading.current_thread().name, "Before process_redo_record()"))
             self.process_redo_record(redo_record)
+
+            logging.debug(message_debug(922, threading.current_thread().name, "After process_redo_record()"))
 
         # Log message for thread exiting.
 
