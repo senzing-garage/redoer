@@ -779,11 +779,11 @@ message_dictionary = {
     "912": "RabbitmqSubscribeThread: {0} Host: {1} Queue-name: {2} Username: {3}  Prefetch-count: {4}",
     "916": "Thread: {0} Queue: {1} Publish Message: {2}",
     "917": "Thread: {0} Queue: {1} Subscribe Message: {2}",
-    "918": "Thread: {0} redo_records() -> {1}",
+    "918": "Thread: {0} pulled message from {1} queue: {2}",
     "919": "Thread: {0} processing redo record: {1}",
     "920": "gdb STDOUT: {0}",
     "921": "gdb STDERR: {0}",
-    "922": "Timing: {0}",
+    "922": "Thread: {0} Marker: {1} Redo record: {2}",
     "995": "Thread: {0} Using Class: {1}",
     "996": "Thread: {0} Using Mixin: {1}",
     "997": "Thread: {0} Using Thread: {1}",
@@ -1526,7 +1526,7 @@ class InputInternalMixin():
 
         while True:
             message = self.redo_queue.get()
-            logging.debug(message_debug(918, threading.current_thread().name, message))
+            logging.debug(message_debug(918, threading.current_thread().name, "internal", message))
             self.config['received_from_redo_queue'] += 1
             assert type(message) == str
             yield message
@@ -1585,7 +1585,7 @@ class InputKafkaMixin():
 
             # As a generator, give the value to the co-routine.
 
-            logging.debug(message_debug(918, threading.current_thread().name, message))
+            logging.debug(message_debug(918, threading.current_thread().name, "Kafka", message))
             assert type(message) == str
             yield message
 
@@ -1646,7 +1646,7 @@ class InputRabbitmqMixin():
             message = str(self.input_rabbitmq_mixin_queue.get())
             assert type(message) == str
             self.config['received_from_redo_queue'] += 1
-            logging.debug(message_debug(918, threading.current_thread().name, message))
+            logging.debug(message_debug(918, threading.current_thread().name, "RabbitMQ", message))
             yield message
 
 # -----------------------------------------------------------------------------
@@ -1698,7 +1698,7 @@ class InputSqsMixin():
 
             # As a generator, give the value to the co-routine.
 
-            logging.debug(message_debug(918, threading.current_thread().name, sqs_message_body))
+            logging.debug(message_debug(918, threading.current_thread().name, "SQS", sqs_message_body))
             assert type(sqs_message_body) == str
             yield sqs_message_body
 
@@ -2194,18 +2194,17 @@ class ProcessRedoQueueThread(threading.Thread):
 
         return_code = 0
         for redo_record in self.redo_records():
+            logging.debug(message_debug(922, threading.current_thread().name, "After generator", redo_record))
 
             # Invoke Governor.
 
-            logging.debug(message_debug(922, threading.current_thread().name, "Before govern()"))
             self.govern()
+            logging.debug(message_debug(922, threading.current_thread().name, "After govern()", redo_record))
 
             # Process record based on the Mixin's process_redo_record() method.
 
-            logging.debug(message_debug(922, threading.current_thread().name, "Before process_redo_record()"))
             self.process_redo_record(redo_record)
-
-            logging.debug(message_debug(922, threading.current_thread().name, "After process_redo_record()"))
+            logging.debug(message_debug(922, threading.current_thread().name, "After process_redo_record()", redo_record))
 
         # Log message for thread exiting.
 
