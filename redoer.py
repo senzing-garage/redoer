@@ -39,7 +39,7 @@ except ImportError:
     pass
 
 __all__ = []
-__version__ = "1.3.4-1"  # See https://www.python.org/dev/peps/pep-0396/
+__version__ = "1.3.4-2"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
 __updated__ = '2020-12-02'
 
@@ -782,8 +782,10 @@ message_dictionary = {
     "906": "Thread: {0} re-processing redo record: {1}",
     "908": "Thread: {0} g2_engine.reinitV2({1})",
     "910": "Thread: {0} g2_engine.process() redo_record: {1}",
-    "911": "Thread: {0} g2_engine.processWithInfo() return_code: {0} redo_record: {1} withInfo: {2}",
-    "912": "RabbitmqSubscribeThread: {0} Host: {1} Queue-name: {2} Username: {3}  Prefetch-count: {4}",
+    "911": "Thread: {0} g2_engine.process() -> redo_record: {1}",
+    "913": "Thread: {0} g2_engine.processWithInfo() redo_record: {1}",
+    "914": "Thread: {0} g2_engine.processWithInfo() -> redo_record: {1} withInfo: {2}",
+    "915": "RabbitmqSubscribeThread: {0} Host: {1} Queue-name: {2} Username: {3}  Prefetch-count: {4}",
     "916": "Thread: {0} Queue: {1} Publish Message: {2}",
     "917": "Thread: {0} Queue: {1} Subscribe Message: {2}",
     "918": "Thread: {0} pulled message from {1} queue: {2}",
@@ -1303,7 +1305,7 @@ class RabbitmqSubscribeThread(threading.Thread):
         logging.debug(message_debug(997, threading.current_thread().name, "RabbitmqSubscribeThread"))
 
         logging.debug(message_debug(
-            912,
+            915,
             threading.current_thread().name,
             host,
             queue_name,
@@ -1752,9 +1754,10 @@ class ExecuteMixin():
         # Call g2_engine.process() and handle "edge" cases.
 
         try:
+            logging.debug(message_debug(910, threading.current_thread().name, redo_record))
             self.g2_engine.process(redo_record)
             self.config['processed_redo_records'] += 1
-            logging.debug(message_debug(910, threading.current_thread().name, redo_record))
+            logging.debug(message_debug(911, threading.current_thread().name, redo_record))
 
         except G2Exception.G2ModuleNotInitialized as err:
             exit_error(707, threading.current_thread().name, err, redo_record)
@@ -1764,7 +1767,7 @@ class ExecuteMixin():
                 logging.debug(message_debug(906, threading.current_thread().name, redo_record))
                 self.g2_engine.process(redo_record)
                 self.config['processed_redo_records'] += 1
-                logging.debug(message_debug(910, threading.current_thread().name, redo_record))
+                logging.debug(message_debug(911, threading.current_thread().name, redo_record))
             else:
                 exit_error(709, threading.current_thread().name, err)
 
@@ -1795,9 +1798,10 @@ class ExecuteWithInfoMixin():
         # Call g2_engine.processWithInfo() and handle "edge" cases.
 
         try:
+            logging.debug(message_debug(913, threading.current_thread().name, redo_record))
             self.g2_engine.processWithInfo(redo_record, info_bytearray, self.g2_engine_flags)
             self.config['processed_redo_records'] += 1
-            logging.debug(message_debug(911, threading.current_thread().name, redo_record, info_bytearray))
+            logging.debug(message_debug(914, threading.current_thread().name, redo_record, info_bytearray))
         except G2Exception.G2ModuleNotInitialized as err:
             self.send_to_failure_queue(redo_record)
             exit_error(707, threading.current_thread().name, err, info_bytearray.decode())
@@ -1807,7 +1811,7 @@ class ExecuteWithInfoMixin():
                 logging.debug(message_debug(906, threading.current_thread().name, redo_record))
                 self.g2_engine.processWithInfo(redo_record, info_bytearray, self.g2_engine_flags)
                 self.config['processed_redo_records'] += 1
-                logging.debug(message_debug(911, threading.current_thread().name, redo_record, info_bytearray))
+                logging.debug(message_debug(914, threading.current_thread().name, redo_record, info_bytearray))
             else:
                 self.send_to_failure_queue(redo_record)
                 exit_error(709, threading.current_thread().name, err)
