@@ -39,7 +39,7 @@ except ImportError:
     pass
 
 __all__ = []
-__version__ = "1.3.4"  # See https://www.python.org/dev/peps/pep-0396/
+__version__ = "1.3.4-1"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
 __updated__ = '2020-12-02'
 
@@ -719,7 +719,6 @@ message_dictionary = {
     "181": "Monitoring halted. No active workers.",
     "190": "AWS SQS Long-polling: No messages from {0}",
     "203": "          WARNING: License will expire soon. Only {0} days left.",
-    "210": "Thread: {0} g2_engine.getRedoRecord() returned nothing. Sleeping {1} seconds before retry.",
     "292": "Configuration change detected.  Old: {0} New: {1}",
     "293": "For information on warnings and errors, see https://github.com/Senzing/stream-loader#errors",
     "294": "Version: {0}  Updated: {1}",
@@ -776,8 +775,10 @@ message_dictionary = {
     "898": "Could not initialize G2Engine with '{0}'. Error: {1}",
     "899": "{0}",
     "900": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}D",
-    "901": "Thread: {0} g2_engine.getRedoRecord() -> {1}",
-    "902": "Thread: {0} Added message to internal queue: {1}",
+    "901": "Thread: {0} g2_engine.getRedoRecord()",
+    "902": "Thread: {0} g2_engine.getRedoRecord() returned nothing. Sleeping {1} seconds before retry.",
+    "903": "Thread: {0} g2_engine.getRedoRecord() -> {1}",
+    "904": "Thread: {0} Added message to internal queue: {1}",
     "906": "Thread: {0} re-processing redo record: {1}",
     "908": "Thread: {0} g2_engine.reinitV2({1})",
     "910": "Thread: {0} g2_engine.process() redo_record: {1}",
@@ -2251,6 +2252,7 @@ class QueueRedoRecordsThread(threading.Thread):
             # Read a Senzing redo record.
 
             try:
+                logging.debug(message_debug(901, threading.current_thread().name))
                 return_code = self.g2_engine.getRedoRecord(redo_record_bytearray)
             except G2Exception.G2ModuleNotInitialized as err:
                 exit_error(702, err, redo_record_bytearray.decode())
@@ -2263,13 +2265,13 @@ class QueueRedoRecordsThread(threading.Thread):
 
             redo_record = redo_record_bytearray.decode()
             if not redo_record:
-                logging.info(message_info(210, threading.current_thread().name), redo_sleep_time_in_seconds)
+                logging.debug(message_debug(902, threading.current_thread().name), redo_sleep_time_in_seconds)
                 time.sleep(redo_sleep_time_in_seconds)
                 continue
 
             # Return generator value.
 
-            logging.debug(message_debug(901, threading.current_thread().name, redo_record))
+            logging.debug(message_debug(903, threading.current_thread().name, redo_record))
             self.config['redo_records_from_senzing_engine'] += 1
             assert type(redo_record) == str
             yield redo_record
@@ -2284,7 +2286,7 @@ class QueueRedoRecordsThread(threading.Thread):
         # Transfer messages from Senzing to internal queue.
 
         for redo_record in self.redo_records():
-            logging.debug(message_debug(902, threading.current_thread().name, redo_record))
+            logging.debug(message_debug(904, threading.current_thread().name, redo_record))
             self.send_to_redo_queue(redo_record)
 
         # Log message for thread exiting.
