@@ -719,6 +719,7 @@ message_dictionary = {
     "181": "Monitoring halted. No active workers.",
     "190": "AWS SQS Long-polling: No messages from {0}",
     "203": "          WARNING: License will expire soon. Only {0} days left.",
+    "210": "Thread: {0} g2_engine.getRedoRecord() returned nothing. Sleeping {1} seconds before retry.",
     "292": "Configuration change detected.  Old: {0} New: {1}",
     "293": "For information on warnings and errors, see https://github.com/Senzing/stream-loader#errors",
     "294": "Version: {0}  Updated: {1}",
@@ -2262,6 +2263,7 @@ class QueueRedoRecordsThread(threading.Thread):
 
             redo_record = redo_record_bytearray.decode()
             if not redo_record:
+                logging.info(message_info(210, threading.current_thread().name), redo_sleep_time_in_seconds)
                 time.sleep(redo_sleep_time_in_seconds)
                 continue
 
