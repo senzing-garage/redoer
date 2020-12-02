@@ -39,9 +39,9 @@ except ImportError:
     pass
 
 __all__ = []
-__version__ = "1.3.3"  # See https://www.python.org/dev/peps/pep-0396/
+__version__ = "1.3.4"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2020-11-30'
+__updated__ = '2020-12-02'
 
 SENZING_PRODUCT_ID = "5010"  # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 log_format = '%(asctime)s %(message)s'
@@ -296,6 +296,11 @@ configuration_locator = {
         "default": "/opt/senzing/g2/resources",
         "env": "SENZING_RESOURCE_PATH",
         "cli": "resource-path"
+    },
+    "run_gdb": {
+        "default": False,
+        "env": "SENZING_RUN_GDB",
+        "cli": "run-gdb",
     },
     "sleep_time_in_seconds": {
         "default": 0,
@@ -1018,6 +1023,7 @@ def get_configuration(args):
         'debug',
         'exit_on_thread_termination',
         'rabbitmq_use_existing_entities',
+        'run_gdb',
     ]
     for boolean in booleans:
         boolean_value = result.get(boolean)
@@ -1351,6 +1357,7 @@ class MonitorThread(threading.Thread):
         self.log_level_parameter = config.get("log_level_parameter")
         self.log_license_period_in_seconds = self.config.get("log_license_period_in_seconds")
         self.pstack_pid = config.get("pstack_pid")
+        self.run_gdb = self.config.get('run_gdb')
         self.sleep_time_in_seconds = self.config.get('monitoring_period_in_seconds')
         self.workers = workers
 
@@ -1447,7 +1454,7 @@ class MonitorThread(threading.Thread):
 
             # If requested, debug stacks.
 
-            if self.log_level_parameter == "debug":
+            if self.run_gdb:
                 completed_process = None
                 try:
 
