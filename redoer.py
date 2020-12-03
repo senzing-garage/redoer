@@ -39,9 +39,9 @@ except ImportError:
     pass
 
 __all__ = []
-__version__ = "1.3.4-3"  # See https://www.python.org/dev/peps/pep-0396/
+__version__ = "1.3.4"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2020-12-02'
+__updated__ = '2020-12-03'
 
 SENZING_PRODUCT_ID = "5010"  # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 log_format = '%(asctime)s %(message)s'
