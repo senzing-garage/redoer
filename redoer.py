@@ -39,7 +39,7 @@ except ImportError:
     pass
 
 __all__ = []
-__version__ = "1.3.4-2"  # See https://www.python.org/dev/peps/pep-0396/
+__version__ = "1.3.4-3"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
 __updated__ = '2020-12-02'
 
@@ -1756,8 +1756,8 @@ class ExecuteMixin():
         try:
             logging.debug(message_debug(910, threading.current_thread().name, redo_record))
             self.g2_engine.process(redo_record)
-            self.config['processed_redo_records'] += 1
             logging.debug(message_debug(911, threading.current_thread().name, redo_record))
+            self.config['processed_redo_records'] += 1
 
         except G2Exception.G2ModuleNotInitialized as err:
             exit_error(707, threading.current_thread().name, err, redo_record)
@@ -1766,8 +1766,8 @@ class ExecuteMixin():
                 self.update_active_g2_configuration()
                 logging.debug(message_debug(906, threading.current_thread().name, redo_record))
                 self.g2_engine.process(redo_record)
-                self.config['processed_redo_records'] += 1
                 logging.debug(message_debug(911, threading.current_thread().name, redo_record))
+                self.config['processed_redo_records'] += 1
             else:
                 exit_error(709, threading.current_thread().name, err)
 
@@ -1800,8 +1800,8 @@ class ExecuteWithInfoMixin():
         try:
             logging.debug(message_debug(913, threading.current_thread().name, redo_record))
             self.g2_engine.processWithInfo(redo_record, info_bytearray, self.g2_engine_flags)
-            self.config['processed_redo_records'] += 1
             logging.debug(message_debug(914, threading.current_thread().name, redo_record, info_bytearray))
+            self.config['processed_redo_records'] += 1
         except G2Exception.G2ModuleNotInitialized as err:
             self.send_to_failure_queue(redo_record)
             exit_error(707, threading.current_thread().name, err, info_bytearray.decode())
@@ -1810,8 +1810,8 @@ class ExecuteWithInfoMixin():
                 self.update_active_g2_configuration()
                 logging.debug(message_debug(906, threading.current_thread().name, redo_record))
                 self.g2_engine.processWithInfo(redo_record, info_bytearray, self.g2_engine_flags)
-                self.config['processed_redo_records'] += 1
                 logging.debug(message_debug(914, threading.current_thread().name, redo_record, info_bytearray))
+                self.config['processed_redo_records'] += 1
             else:
                 self.send_to_failure_queue(redo_record)
                 exit_error(709, threading.current_thread().name, err)
@@ -2269,7 +2269,7 @@ class QueueRedoRecordsThread(threading.Thread):
 
             redo_record = redo_record_bytearray.decode()
             if not redo_record:
-                logging.debug(message_debug(902, threading.current_thread().name), redo_sleep_time_in_seconds)
+                logging.debug(message_debug(902, threading.current_thread().name, redo_sleep_time_in_seconds))
                 time.sleep(redo_sleep_time_in_seconds)
                 continue
 
