@@ -292,6 +292,16 @@ configuration_locator = {
         "env": "SENZING_REDO_SLEEP_TIME_IN_SECONDS",
         "cli": "redo-sleep-time-in-seconds",
     },
+    "redo_retry_sleep_time_in_seconds": {
+        "default": 60,
+        "env": "SENZING_REDO_RETRY_SLEEP_TIME_IN_SECONDS",
+        "cli": "redo-retry-sleep-time-in-seconds",
+    },
+    "redo_retry_limit": {
+        "default": 5,
+        "env": "SENZING_REDO_RETRY_LIMIT",
+        "cli": "redo-retry-limit",
+    },
     "resource_path": {
         "default": "/opt/senzing/g2/resources",
         "env": "SENZING_RESOURCE_PATH",
@@ -752,10 +762,12 @@ message_dictionary = {
     "701": "G2Engine.getRedoRecord() bad return code: {0}",
     "702": "G2Engine.getRedoRecord() G2ModuleNotInitialized: {0} XML: {1}",
     "703": "G2Engine.getRedoRecord() err: {0}",
+    "704": "G2Engine.getRedoRecord() err: {0}; Attempting reprocessing in {1} seconds",
     "706": "G2Engine.process() bad return code: {0}",
     "707": "Thread: {0} G2Engine.process() G2ModuleNotInitialized: {0} XML: {1}",
     "708": "G2Engine.process() G2ModuleGenericException: {0} XML: {1}",
     "709": "Thread: {0} G2Engine.process() err: {1}",
+    "710": "Thread: {0} G2Engine.process() Database connection error: {1}; Retrying execution",
     "721": "Running low on workers.  May need to restart",
     "722": "Thread: {0} Kafka commit failed for {1}",
     "723": "Detected inactive thread. Total threads: {0}  Active threads: {1}",
@@ -1047,6 +1059,8 @@ def get_configuration(args):
         'monitoring_period_in_seconds',
         'queue_maxsize',
         'redo_sleep_time_in_seconds',
+        'redo_retry_sleep_time_in_seconds',
+        'redo_retry_limit',
         'sleep_time_in_seconds',
         'threads_per_process'
     ]
@@ -1762,6 +1776,11 @@ class ExecuteMixin():
         except G2Exception.G2ModuleNotInitialized as err:
             exit_error(707, threading.current_thread().name, err, redo_record)
         except Exception as err:
+            # OT-TODO: replace this error handling in the future when G2 throws dedicated
+            # failed connection exception.
+            if is_db_connection_error(err.args[0]):
+                logging.warning(message_warning(710, threading.current_thread().name, err))
+                return
             if self.is_g2_default_configuration_changed():
                 self.update_active_g2_configuration()
                 logging.debug(message_debug(906, threading.current_thread().name, redo_record))
@@ -1806,6 +1825,11 @@ class ExecuteWithInfoMixin():
             self.send_to_failure_queue(redo_record)
             exit_error(707, threading.current_thread().name, err, info_bytearray.decode())
         except Exception as err:
+            # OT-TODO: replace this error handling in the future when G2 throws dedicated
+            # failed connection exception.
+            if is_db_connection_error(err.args[0]):
+                logging.warning(message_warning(710, threading.current_thread().name, err))
+                return
             if self.is_g2_default_configuration_changed():
                 self.update_active_g2_configuration()
                 logging.debug(message_debug(906, threading.current_thread().name, redo_record))
@@ -2243,11 +2267,14 @@ class QueueRedoRecordsThread(threading.Thread):
         # Pull values from configuration.
 
         redo_sleep_time_in_seconds = self.config.get('redo_sleep_time_in_seconds')
+        redo_retry_sleep_time_in_seconds = self.config.get('redo_retry_sleep_time_in_seconds')
+        redo_retry_limit = self.config.get('redo_retry_limit')
 
         # Initialize variables.
 
         redo_record_bytearray = bytearray()
         return_code = 0
+        retry_count = 0
 
         # Read forever.
 
@@ -2261,9 +2288,19 @@ class QueueRedoRecordsThread(threading.Thread):
             except G2Exception.G2ModuleNotInitialized as err:
                 exit_error(702, err, redo_record_bytearray.decode())
             except Exception as err:
+                # OT-TODO: replace this error handling in the future when G2 throws dedicated
+                # failed connection exception.
+                if is_db_connection_error(err.args[0]) and retry_count < redo_retry_limit:
+                    retry_count += 1
+                    logging.warning(message_warning(704, err, redo_retry_sleep_time_in_seconds))
+                    time.sleep(redo_retry_sleep_time_in_seconds)
+                    continue
                 exit_error(703, err)
             if return_code:
                 exit_error(701, return_code)
+
+            # Reset the retry count
+            retry_count = 0
 
             # If redo record was not received, sleep and try again.
 
@@ -2500,6 +2537,10 @@ def exit_error_program(index, *args):
 def exit_silently():
     ''' Exit program. '''
     sys.exit(0)
+
+
+def is_db_connection_error(errorText):
+    return 'Database Connection Failure' in errorText or 'Database Connection Lost' in errorText
 
 # -----------------------------------------------------------------------------
 # Senzing configuration.
