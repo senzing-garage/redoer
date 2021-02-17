@@ -1680,11 +1680,17 @@ class InputRabbitmqMixin():
 
 
 class InputSqsMixin():
+    PATTERN = "^([^/]+://[^/]+)/"
 
     def __init__(self, *args, **kwargs):
         logging.debug(message_debug(996, threading.current_thread().name, "InputSqsMixin"))
         self.queue_url = self.config.get("sqs_redo_queue_url")
-        self.sqs = boto3.client("sqs")
+        pat = re.compile(self.PATTERN)
+        m = pat.match(self.queue_url)
+        if m is None:
+          raise RuntimeError("Invalid SQS URL config for {}".format(self.queue_url))
+        self.endpoint = m.group(1)
+        self.sqs = boto3.client("sqs", endpoint_url = self.endpoint)
 
     def redo_records(self):
         '''
@@ -1937,11 +1943,17 @@ class ExecuteWriteToRabbitmqMixin():
 
 
 class ExecuteWriteToSqsMixin():
+    PATTERN = "^([^/]+://[^/]+)/"
 
     def __init__(self, *args, **kwargs):
         logging.debug(message_debug(996, threading.current_thread().name, "ExecuteWriteToSqsMixin"))
         self.queue_url = self.config.get("sqs_redo_queue_url")
-        self.sqs = boto3.client("sqs")
+        pat = re.compile(self.PATTERN)
+        m = pat.match(self.queue_url)
+        if m is None:
+          raise RuntimeError("Invalid SQS URL config for {}".format(self.queue_url))
+        self.endpoint = m.group(1)
+        self.sqs = boto3.client("sqs", endpoint_url = self.endpoint)
 
     def process_redo_record(self, redo_record=None):
         '''
@@ -2106,12 +2118,18 @@ class OutputRabbitmqMixin():
 
 class OutputSqsMixin():
     ''' This is a "null object". '''
+    PATTERN = "^([^/]+://[^/]+)/"
 
     def __init__(self, *args, **kwargs):
         logging.debug(message_debug(996, threading.current_thread().name, "OutputInternalMixin"))
         self.info_queue_url = self.config.get("sqs_info_queue_url")
         self.failure_queue_url = self.config.get("sqs_failure_queue_url")
-        self.sqs = boto3.client("sqs")
+        pat = re.compile(self.PATTERN)
+        m = pat.match(self.info_queue_url)
+        if m is None:
+          raise RuntimeError("Invalid SQS URL config for {}".format(self.info_queue_url))
+        self.endpoint = m.group(1)
+        self.sqs = boto3.client("sqs", endpoint_url = self.endpoint)
 
     def send_to_failure_queue(self, message):
         assert type(message) == str
