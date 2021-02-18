@@ -39,9 +39,9 @@ except ImportError:
     pass
 
 __all__ = []
-__version__ = "1.3.4"  # See https://www.python.org/dev/peps/pep-0396/
+__version__ = "1.3.5"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2020-12-03'
+__updated__ = '2021-02-18'
 
 SENZING_PRODUCT_ID = "5010"  # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 log_format = '%(asctime)s %(message)s'
@@ -1680,17 +1680,22 @@ class InputRabbitmqMixin():
 
 
 class InputSqsMixin():
-    PATTERN = "^([^/]+://[^/]+)/"
 
     def __init__(self, *args, **kwargs):
         logging.debug(message_debug(996, threading.current_thread().name, "InputSqsMixin"))
         self.queue_url = self.config.get("sqs_redo_queue_url")
-        pat = re.compile(self.PATTERN)
-        m = pat.match(self.queue_url)
-        if m is None:
-          raise RuntimeError("Invalid SQS URL config for {}".format(self.queue_url))
-        self.endpoint = m.group(1)
-        self.sqs = boto3.client("sqs", endpoint_url = self.endpoint)
+
+        # Create sqs object.
+        # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/sqs.html
+        # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/core/session.html
+
+        regular_expression = "^([^/]+://[^/]+)/"
+        regex = re.compile(regular_expression)
+        match = regex.match(self.queue_url)
+        if not match:
+            exit_error(750, self.queue_url)
+        endpoint_url = match.group(1)
+        self.sqs = boto3.client("sqs", endpoint_url=endpoint_url)
 
     def redo_records(self):
         '''
@@ -1943,17 +1948,22 @@ class ExecuteWriteToRabbitmqMixin():
 
 
 class ExecuteWriteToSqsMixin():
-    PATTERN = "^([^/]+://[^/]+)/"
 
     def __init__(self, *args, **kwargs):
         logging.debug(message_debug(996, threading.current_thread().name, "ExecuteWriteToSqsMixin"))
         self.queue_url = self.config.get("sqs_redo_queue_url")
-        pat = re.compile(self.PATTERN)
-        m = pat.match(self.queue_url)
-        if m is None:
-          raise RuntimeError("Invalid SQS URL config for {}".format(self.queue_url))
-        self.endpoint = m.group(1)
-        self.sqs = boto3.client("sqs", endpoint_url = self.endpoint)
+
+        # Create sqs object.
+        # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/sqs.html
+        # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/core/session.html
+
+        regular_expression = "^([^/]+://[^/]+)/"
+        regex = re.compile(regular_expression)
+        match = regex.match(self.queue_url)
+        if not match:
+            exit_error(750, self.queue_url)
+        endpoint_url = match.group(1)
+        self.sqs = boto3.client("sqs", endpoint_url=endpoint_url)
 
     def process_redo_record(self, redo_record=None):
         '''
@@ -2124,12 +2134,18 @@ class OutputSqsMixin():
         logging.debug(message_debug(996, threading.current_thread().name, "OutputInternalMixin"))
         self.info_queue_url = self.config.get("sqs_info_queue_url")
         self.failure_queue_url = self.config.get("sqs_failure_queue_url")
-        pat = re.compile(self.PATTERN)
-        m = pat.match(self.info_queue_url)
-        if m is None:
-          raise RuntimeError("Invalid SQS URL config for {}".format(self.info_queue_url))
-        self.endpoint = m.group(1)
-        self.sqs = boto3.client("sqs", endpoint_url = self.endpoint)
+
+        # Create sqs object.
+        # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/sqs.html
+        # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/core/session.html
+
+        regular_expression = "^([^/]+://[^/]+)/"
+        regex = re.compile(regular_expression)
+        match = regex.match(self.info_queue_url)
+        if not match:
+            exit_error(750, self.info_queue_url)
+        endpoint_url = match.group(1)
+        self.sqs = boto3.client("sqs", endpoint_url=endpoint_url)
 
     def send_to_failure_queue(self, message):
         assert type(message) == str
