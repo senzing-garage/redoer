@@ -2128,7 +2128,6 @@ class OutputRabbitmqMixin():
 
 class OutputSqsMixin():
     ''' This is a "null object". '''
-    PATTERN = "^([^/]+://[^/]+)/"
 
     def __init__(self, *args, **kwargs):
         logging.debug(message_debug(996, threading.current_thread().name, "OutputInternalMixin"))
