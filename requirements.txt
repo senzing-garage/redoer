@@ -1,1 +1,6 @@
-xmljson
+boto3
+configparser
+confluent-kafka
+pika
+psutil
+psycopg2-binary
