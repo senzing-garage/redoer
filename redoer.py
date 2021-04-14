@@ -202,6 +202,11 @@ configuration_locator = {
         "env": "SENZING_RABBITMQ_FAILURE_USERNAME",
         "cli": "rabbitmq-failure-username",
     },
+    "rabbitmq_failure_virtual_host": {
+        "default": None,
+        "env": "SENZING_RABBITMQ_FAILURE_VIRTUAL_HOST",
+        "cli": "rabbitmq-failure-virtual-host",
+    },
     "rabbitmq_host": {
         "default": "localhost:5672",
         "env": "SENZING_RABBITMQ_HOST",
@@ -236,6 +241,11 @@ configuration_locator = {
         "default": None,
         "env": "SENZING_RABBITMQ_INFO_USERNAME",
         "cli": "rabbitmq-info-username",
+    },
+    "rabbitmq_info_virtual_host": {
+        "default": None,
+        "env": "SENZING_RABBITMQ_INFO_VIRTUAL_HOST",
+        "cli": "rabbitmq-info-virtual-host",
     },
     "rabbitmq_password": {
         "default": "bitnami",
@@ -277,6 +287,11 @@ configuration_locator = {
         "env": "SENZING_RABBITMQ_REDO_USERNAME",
         "cli": "rabbitmq-redo-username",
     },
+    "rabbitmq_redo_virtual_host": {
+        "default": None,
+        "env": "SENZING_RABBITMQ_REDO_VIRTUAL_HOST",
+        "cli": "rabbitmq-redo-virtual-host",
+    },
     "rabbitmq_use_existing_entities": {
         "default": True,
         "env": "SENZING_RABBITMQ_USE_EXISTING_ENTITIES",
@@ -286,6 +301,11 @@ configuration_locator = {
         "default": "user",
         "env": "SENZING_RABBITMQ_USERNAME",
         "cli": "rabbitmq-username",
+    },
+    "rabbitmq_virtual_host": {
+        "default": None,
+        "env": "SENZING_RABBITMQ_VIRTUAL_HOST",
+        "cli": "rabbitmq-virtual-host",
     },
     "redo_sleep_time_in_seconds": {
         "default": 60,
@@ -532,6 +552,11 @@ def get_parser():
                 "metavar": "SENZING_RABBITMQ_USERNAME",
                 "help": "RabbitMQ username. Default: user"
             },
+            "--rabbitmq-virtual-host": {
+                "dest": "rabbitmq_virtual_host",
+                "metavar": "SENZING_RABBITMQ_VIRTUAL_HOST",
+                "help": "RabbitMQ virtual host. Default: None, which will use the RabbitMQ defined default virtual host"
+            },
             "--rabbitmq-use-existing-entities": {
                 "dest": "rabbitmq_use_existing_entities",
                 "metavar": "SENZING_RABBITMQ_USE_EXISTING_ENTITIES",
@@ -569,6 +594,11 @@ def get_parser():
                 "metavar": "SENZING_RABBITMQ_FAILURE_USERNAME",
                 "help": "RabbitMQ username. Default: SENZING_RABBITMQ_USERNAME"
             },
+            "--rabbitmq-failure-virtual-host": {
+                "dest": "rabbitmq_failure_virtual_host",
+                "metavar": "SENZING_RABBITMQ_FAILURE_VIRTUAL_HOST",
+                "help": "RabbitMQ virtual host. Default: SENZING_RABBITMQ_VIRTUAL_HOST"
+            },
         },
         "rabbitmq-info": {
             "--rabbitmq-info-exchange": {
@@ -601,6 +631,11 @@ def get_parser():
                 "metavar": "SENZING_RABBITMQ_INFO_USERNAME",
                 "help": "RabbitMQ username. Default: SENZING_RABBITMQ_USERNAME"
             },
+            "--rabbitmq-info-virtual-host": {
+                "dest": "rabbitmq_info_virtual_host",
+                "metavar": "SENZING_RABBITMQ_INFO_VIRTUAL_HOST",
+                "help": "RabbitMQ virtual host. Default: SENZING_RABBITMQ_VIRTUAL_HOST"
+            },
         },
         "rabbitmq-redo": {
             "--rabbitmq-redo-exchange": {
@@ -632,6 +667,11 @@ def get_parser():
                 "dest": "rabbitmq_redo_username",
                 "metavar": "SENZING_RABBITMQ_REDO_USERNAME",
                 "help": "RabbitMQ username. Default: SENZING_RABBITMQ_USERNAME"
+            },
+            "--rabbitmq-redo-virtual-host": {
+                "dest": "rabbitmq_redo_virtual_host",
+                "metavar": "SENZING_RABBITMQ_redo_VIRTUAL_HOST",
+                "help": "RabbitMQ virtual host. Default: SENZING_RABBITMQ_VIRTUAL_HOST"
             },
         },
         "sqs-failure": {
@@ -1188,6 +1228,7 @@ class Rabbitmq:
         host,
         queue_name,
         exchange,
+        virtual_host,
         routing_key,
         passive,
         delivery_mode=2,
@@ -1205,6 +1246,7 @@ class Rabbitmq:
         assert type(exchange) == str
         assert type(delivery_mode) == int
         assert type(prefetch_count) == int
+        assert type(virtual_host) == str
 
         # Instance variables.
 
@@ -1226,6 +1268,7 @@ class Rabbitmq:
                 credentials=credentials,
                 host=host,
                 heartbeat=0,
+                virtual_host=virtual_host
             )
 
             self.connection = pika.BlockingConnection(connection_parameters)
@@ -1233,10 +1276,12 @@ class Rabbitmq:
             self.channel.basic_qos(
                 prefetch_count=prefetch_count,
             )
+
             self.channel.exchange_declare(
                 exchange=self.exchange,
                 passive=passive
             )
+
             message_queue = self.channel.queue_declare(
                 queue=self.queue_name,
                 passive=passive
@@ -1314,7 +1359,7 @@ class RabbitmqSubscribeThread(threading.Thread):
     Wrap RabbitMQ behind a Python Queue.
     '''
 
-    def __init__(self, internal_queue, host, exchange, queue_name, routing_key, username, password, passive, prefetch_count):
+    def __init__(self, internal_queue, host, exchange, virtual_host, queue_name, routing_key, username, password, passive, prefetch_count):
         threading.Thread.__init__(self)
         logging.debug(message_debug(997, threading.current_thread().name, "RabbitmqSubscribeThread"))
 
@@ -1337,6 +1382,7 @@ class RabbitmqSubscribeThread(threading.Thread):
             host=host,
             queue_name=queue_name,
             exchange=exchange,
+            virtual_host=virtual_host,
             routing_key=routing_key,
             passive=passive,
             prefetch_count=prefetch_count
@@ -1639,12 +1685,18 @@ class InputRabbitmqMixin():
 
         threads = []
 
+        # If virtual host is not specified, get the default value from pika
+        virtual_host = self.config.get("rabbitmq_redo_virtual_host")
+        if virtual_host is None:
+            virtual_host = pika.ConnectionParameters.DEFAULT_VIRTUAL_HOST
+
         # Create thread for redo queue.
 
         redo_thread = RabbitmqSubscribeThread(
             self.input_rabbitmq_mixin_queue,
             self.config.get("rabbitmq_redo_host"),
             self.config.get("rabbitmq_redo_exchange"),
+            virtual_host,
             self.config.get("rabbitmq_redo_queue"),
             self.config.get("rabbitmq_redo_routing_key"),
             self.config.get("rabbitmq_redo_username"),
@@ -1921,12 +1973,18 @@ class ExecuteWriteToRabbitmqMixin():
     def __init__(self, *args, **kwargs):
         logging.debug(message_debug(996, threading.current_thread().name, "ExecuteWriteToRabbitmqMixin"))
 
+        # If virtual host is not specified, get the default value from pika
+        virtual_host = self.config.get("rabbitmq_redo_virtual_host")
+        if virtual_host is None:
+            virtual_host = pika.ConnectionParameters.DEFAULT_VIRTUAL_HOST
+
         self.execute_write_to_rabbitmq_mixin_rabbitmq = Rabbitmq(
             username=self.config.get("rabbitmq_redo_username"),
             password=self.config.get("rabbitmq_redo_password"),
             host=self.config.get("rabbitmq_redo_host"),
             queue_name=self.config.get("rabbitmq_redo_queue"),
             exchange=self.config.get("rabbitmq_redo_exchange"),
+            virtual_host=virtual_host,
             routing_key=self.config.get("rabbitmq_redo_routing_key"),
             passive=self.config.get("rabbitmq_use_existing_entities"),
         )
@@ -1943,7 +2001,7 @@ class ExecuteWriteToRabbitmqMixin():
         self.config['sent_to_redo_queue'] += 1
 
 # -----------------------------------------------------------------------------
-# Class: ExecuteWriteToRabbitmqMixin
+# Class: ExecuteWriteToSqsMixin
 # -----------------------------------------------------------------------------
 
 
@@ -2089,17 +2147,28 @@ class OutputRabbitmqMixin():
 
         # Connect to RabbitMQ for "info".
 
+        # If virtual host is not specified, get the default value from pika
+        info_virtual_host = self.config.get("rabbitmq_info_virtual_host")
+        if info_virtual_host is None:
+            info_virtual_host = pika.ConnectionParameters.DEFAULT_VIRTUAL_HOST
+
         self.output_rabbitmq_mixin_info_rabbitmq = Rabbitmq(
             username=self.config.get("rabbitmq_info_username"),
             password=self.config.get("rabbitmq_info_password"),
             host=self.config.get("rabbitmq_info_host"),
             queue_name=self.config.get("rabbitmq_info_queue"),
             exchange=self.config.get("rabbitmq_info_exchange"),
+            virtual_host=info_virtual_host,
             routing_key=self.config.get("rabbitmq_info_routing_key"),
             passive=self.config.get("rabbitmq_use_existing_entities"),
         )
 
         # Connect to RabbitMQ for "failure".
+
+        # If virtual host is not specified, get the default value from pika
+        failure_virtual_host = self.config.get("rabbitmq_failure_virtual_host")
+        if failure_virtual_host is None:
+            failure_virtual_host = pika.ConnectionParameters.DEFAULT_VIRTUAL_HOST
 
         self.output_rabbitmq_mixin_failure_rabbitmq = Rabbitmq(
             username=self.config.get("rabbitmq_failure_username"),
@@ -2107,6 +2176,7 @@ class OutputRabbitmqMixin():
             host=self.config.get("rabbitmq_failure_host"),
             queue_name=self.config.get("rabbitmq_failure_queue"),
             exchange=self.config.get("rabbitmq_failure_exchange"),
+            virtual_host=failure_virtual_host,
             routing_key=self.config.get("rabbitmq_failure_routing_key"),
             passive=self.config.get("rabbitmq_use_existing_entities"),
         )
@@ -2860,6 +2930,7 @@ def do_read_from_rabbitmq(args):
         "rabbitmq_redo_host": "rabbitmq_host",
         "rabbitmq_redo_password": "rabbitmq_password",
         "rabbitmq_redo_username": "rabbitmq_username",
+        "rabbitmq_redo_virtual_host": "rabbitmq_virtual_host",
     }
 
     redo_processor(
@@ -2917,14 +2988,17 @@ def do_read_from_rabbitmq_withinfo(args):
         "rabbitmq_failure_host": "rabbitmq_host",
         "rabbitmq_failure_password": "rabbitmq_password",
         "rabbitmq_failure_username": "rabbitmq_username",
+        "rabbitmq_failure_virtual_host": "rabbitmq_virtual_host",
         "rabbitmq_info_exchange": "rabbitmq_exchange",
         "rabbitmq_info_host": "rabbitmq_host",
         "rabbitmq_info_password": "rabbitmq_password",
         "rabbitmq_info_username": "rabbitmq_username",
+        "rabbitmq_info_virtual_host": "rabbitmq_virtual_host",
         "rabbitmq_redo_exchange": "rabbitmq_exchange",
         "rabbitmq_redo_host": "rabbitmq_host",
         "rabbitmq_redo_password": "rabbitmq_password",
         "rabbitmq_redo_username": "rabbitmq_username",
+        "rabbitmq_redo_virtual_host": "rabbitmq_virtual_host",
     }
 
     redo_processor(
@@ -2996,10 +3070,12 @@ def do_redo_withinfo_rabbitmq(args):
         "rabbitmq_failure_host": "rabbitmq_host",
         "rabbitmq_failure_password": "rabbitmq_password",
         "rabbitmq_failure_username": "rabbitmq_username",
+        "rabbitmq_failure_virtual_host": "rabbitmq_virtual_host",
         "rabbitmq_info_exchange": "rabbitmq_exchange",
         "rabbitmq_info_host": "rabbitmq_host",
         "rabbitmq_info_password": "rabbitmq_password",
         "rabbitmq_info_username": "rabbitmq_username",
+        "rabbitmq_info_virtual_host": "rabbitmq_virtual_host",
     }
 
     redo_processor(
@@ -3090,6 +3166,7 @@ def do_write_to_rabbitmq(args):
         "rabbitmq_redo_host": "rabbitmq_host",
         "rabbitmq_redo_password": "rabbitmq_password",
         "rabbitmq_redo_username": "rabbitmq_username",
+        "rabbitmq_redo_virtual_host": "rabbitmq_virtual_host",
     }
 
     redo_processor(
