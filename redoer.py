@@ -1934,13 +1934,13 @@ class ExecuteWriteToKafkaMixin():
         }
         self.kafka_producer = confluent_kafka.Producer(kafka_producer_configuration)
 
-    def on_kafka_delivery(error, message):
+    def on_kafka_delivery(self, error, message):
         message_topic = message.topic()
         message_value = message.value()
         message_error = message.error()
         logging.debug(message_debug(103, threading.current_thread().name, message_topic, message_value, message_error, error))
         if error is not None:
-            logging.warning(message_warn(408, threading.current_thread().name, message_topic, message_value, message_error, error))
+            logging.warning(message_warning(408, threading.current_thread().name, message_topic, message_value, message_error, error))
 
     def process_redo_record(self, redo_record=None):
         '''
@@ -1955,13 +1955,13 @@ class ExecuteWriteToKafkaMixin():
             self.kafka_producer.produce(self.kafka_redo_topic, redo_record, on_delivery=self.on_kafka_delivery)
             self.config['sent_to_redo_queue'] += 1
         except BufferError as err:
-            logging.warning(message_warn(404, threading.current_thread().name, self.kafka_redo_topic, err, redo_record))
+            logging.warning(message_warning(404, threading.current_thread().name, self.kafka_redo_topic, err, redo_record))
         except confluent_kafka.KafkaException as err:
-            logging.warning(message_warn(405, threading.current_thread().name, self.kafka_redo_topic, err, redo_record))
+            logging.warning(message_warning(405, threading.current_thread().name, self.kafka_redo_topic, err, redo_record))
         except NotImplemented as err:
-            logging.warning(message_warn(406, threading.current_thread().name, self.kafka_redo_topic, err, redo_record))
+            logging.warning(message_warning(406, threading.current_thread().name, self.kafka_redo_topic, err, redo_record))
         except:
-            logging.warning(message_warn(407, threading.current_thread().name, self.kafka_redo_topic, err, redo_record))
+            logging.warning(message_warning(407, threading.current_thread().name, self.kafka_redo_topic, err, redo_record))
 
 # -----------------------------------------------------------------------------
 # Class: ExecuteWriteToRabbitmqMixin
@@ -2097,13 +2097,13 @@ class OutputKafkaMixin():
         }
         self.kafka_info_producer = confluent_kafka.Producer(kafka_producer_configuration)
 
-    def on_kafka_delivery(error, message):
+    def on_kafka_delivery(self, error, message):
         message_topic = message.topic()
         message_value = message.value()
         message_error = message.error()
         logging.debug(message_debug(103, threading.current_thread().name, message_topic, message_value, message_error, error))
         if error is not None:
-            logging.warning(message_warn(408, threading.current_thread().name, message_topic, message_value, message_error, error))
+            logging.warning(message_warning(408, threading.current_thread().name, message_topic, message_value, message_error, error))
 
     def send_to_failure_queue(self, message):
         assert type(message) == str
@@ -2112,13 +2112,13 @@ class OutputKafkaMixin():
             self.kafka_failure_producer.produce(self.kafka_failure_topic, message, on_delivery=self.on_kafka_delivery)
             self.config['sent_to_failure_queue'] += 1
         except BufferError as err:
-            logging.warning(message_warn(404, threading.current_thread().name, self.kafka_failure_topic, err, message))
+            logging.warning(message_warning(404, threading.current_thread().name, self.kafka_failure_topic, err, message))
         except confluent_kafka.KafkaException as err:
-            logging.warning(message_warn(405, threading.current_thread().name, self.kafka_failure_topic, err, message))
+            logging.warning(message_warning(405, threading.current_thread().name, self.kafka_failure_topic, err, message))
         except NotImplemented as err:
-            logging.warning(message_warn(406, threading.current_thread().name, self.kafka_failure_topic, err, message))
+            logging.warning(message_warning(406, threading.current_thread().name, self.kafka_failure_topic, err, message))
         except:
-            logging.warning(message_warn(407, threading.current_thread().name, self.kafka_failure_topic, err, message))
+            logging.warning(message_warning(407, threading.current_thread().name, self.kafka_failure_topic, err, message))
 
     def send_to_info_queue(self, message):
         assert type(message) == str
@@ -2127,13 +2127,13 @@ class OutputKafkaMixin():
             self.kafka_info_producer.produce(self.kafka_info_topic, message, on_delivery=self.on_kafka_delivery)
             self.config['sent_to_info_queue'] += 1
         except BufferError as err:
-            logging.warning(message_warn(404, threading.current_thread().name, self.kafka_info_topic, err, message))
+            logging.warning(message_warning(404, threading.current_thread().name, self.kafka_info_topic, err, message))
         except confluent_kafka.KafkaException as err:
-            logging.warning(message_warn(405, threading.current_thread().name, self.kafka_info_topic, err, message))
+            logging.warning(message_warning(405, threading.current_thread().name, self.kafka_info_topic, err, message))
         except NotImplemented as err:
-            logging.warning(message_warn(406, threading.current_thread().name, self.kafka_info_topic, err, message))
+            logging.warning(message_warning(406, threading.current_thread().name, self.kafka_info_topic, err, message))
         except:
-            logging.warning(message_warn(407, threading.current_thread().name, self.kafka_info_topic, err, message))
+            logging.warning(message_warning(407, threading.current_thread().name, self.kafka_info_topic, err, message))
 
 # -----------------------------------------------------------------------------
 # Class: OutputRabbitmqMixin
