@@ -262,6 +262,11 @@ configuration_locator = {
         "env": "SENZING_RABBITMQ_INFO_EXCHANGE",
         "cli": "rabbitmq-info-exchange",
     },
+    "rabbitmq_reconnect_delay_in_seconds": {
+        "default": "60",
+        "env": "SENZING_RABBITMQ_RECONNECT_DELAY_IN_SECONDS",
+        "cli": "rabbitmq-reconnect-wait-time-in-seconds",
+    },
     "rabbitmq_redo_host": {
         "default": None,
         "env": "SENZING_RABBITMQ_REDO_HOST",
@@ -547,6 +552,11 @@ def get_parser():
                 "metavar": "SENZING_RABBITMQ_PASSWORD",
                 "help": "RabbitMQ password. Default: bitnami"
             },
+            "--rabbitmq-reconnect-delay-in-seconds": {
+                "dest": "rabbitmq_reconnect_delay_in_seconds",
+                "metavar": "SENZING_RABBITMQ_RECONNECT_DELAY_IN_SECONDS",
+                "help": "The time (in seconds) to wait between attempts to reconnect to the RabbitMQ broker. Default: 60"
+            },
             "--rabbitmq-username": {
                 "dest": "rabbitmq_username",
                 "metavar": "SENZING_RABBITMQ_USERNAME",
@@ -756,6 +766,8 @@ message_dictionary = {
     "129": "{0} is running.",
     "130": "{0} has exited.",
     "131": "Adding redo record to redo queue: {0}",
+    "132": "Sleeping {0} seconds before attempting to reconnect to RabbitMQ",
+    "133": "RabbitMQ connection is not open. Did opening the connection succeed? Thread {0}",
     "160": "{0} LICENSE {0}",
     "161": "          Version: {0} ({1})",
     "162": "         Customer: {0}",
@@ -1098,6 +1110,7 @@ def get_configuration(args):
         'log_license_period_in_seconds',
         'monitoring_period_in_seconds',
         'queue_maxsize',
+        'rabbitmq_reconnect_delay_in_seconds',
         'redo_sleep_time_in_seconds',
         'redo_retry_sleep_time_in_seconds',
         'redo_retry_limit',
@@ -1233,6 +1246,7 @@ class Rabbitmq:
         passive,
         delivery_mode=2,
         prefetch_count=1,
+        reconnect_delay_in_seconds=60
     ):
 
         logging.debug(message_debug(995, threading.current_thread().name, "Rabbitmq"))
@@ -1255,57 +1269,66 @@ class Rabbitmq:
         self.queue_name = queue_name
         self.passive = passive
         self.routing_key = routing_key
+        self.prefetch_count = prefetch_count
+        self.reconnect_delay_in_seconds = reconnect_delay_in_seconds
 
         # Create a RabbitMQ connection and channel.
 
+        self.credentials = pika.PlainCredentials(
+            username=username,
+            password=password,
+        )
+        self.connection_parameters = pika.ConnectionParameters(
+            credentials=self.credentials,
+            host=host,
+            heartbeat=0,
+            virtual_host=virtual_host
+        )
+
+        self.connection, self.channel = self.connect()
+
+    def connect(self, exit_on_exception=True):
+
+        connection = None
+        channel = None
         try:
-
-            credentials = pika.PlainCredentials(
-                username=username,
-                password=password,
-            )
-            connection_parameters = pika.ConnectionParameters(
-                credentials=credentials,
-                host=host,
-                heartbeat=0,
-                virtual_host=virtual_host
+            connection = pika.BlockingConnection(self.connection_parameters)
+            channel = connection.channel()
+            channel.basic_qos(
+                prefetch_count=self.prefetch_count,
             )
 
-            self.connection = pika.BlockingConnection(connection_parameters)
-            self.channel = self.connection.channel()
-            self.channel.basic_qos(
-                prefetch_count=prefetch_count,
-            )
-
-            self.channel.exchange_declare(
+            channel.exchange_declare(
                 exchange=self.exchange,
-                passive=passive
+                passive=self.passive
             )
 
-            message_queue = self.channel.queue_declare(
+            message_queue = channel.queue_declare(
                 queue=self.queue_name,
-                passive=passive
+                passive=self.passive
             )
 
             # if we are actively declaring, then we need to bind. If passive declare, we assume it is already set up
-            if not passive:
-                self.channel.queue_bind(
+
+            if not self.passive:
+                channel.queue_bind(
                     exchange=self.exchange,
                     routing_key=self.routing_key,
                     queue=message_queue.method.queue
                 )
 
         except pika.exceptions.AMQPConnectionError as err:
-            exit_error(562, threading.current_thread().name, err, host)
-        except (pika.exceptions.ChannelClosedByBroker) as err:
-            if err.reply_code == 404:
-                exit_error(563, threading.current_thread().name, self.exchange, self.queue_name)
-            elif err.reply_code == 406:
-                exit_error(564, threading.current_thread().name, self.exchange, self.queue_name)
+            if exit_on_exception:
+                exit_error(562, threading.current_thread().name, err, self.connection_parameters.host)
             else:
-                exit_error(561, threading.current_thread().name, err)
+                logging.info(message_info(562, threading.current_thread().name, err, self.connection_parameters.host))
         except BaseException as err:
-            exit_error(561, threading.current_thread().name, err)
+            if exit_on_exception:
+                exit_error(561, threading.current_thread().name, err)
+            else:
+                logging.info(message_info(561, threading.current_thread().name, err))
+
+        return connection, channel
 
     def receive(self, callback=None):
 
@@ -1323,16 +1346,30 @@ class Rabbitmq:
 
             channel.basic_ack(delivery_tag=method.delivery_tag)
 
-        self.channel.basic_consume(
-            queue=self.queue_name,
-            on_message_callback=on_message_callback,
-        )
-        try:
-            self.channel.start_consuming()
-        except pika.exceptions.ChannelClosed:
-            logging.info(message_info(130, threading.current_thread().name))
-        except BaseException as err:
-            logging.warning(message_warning(413, threading.current_thread().name, self.queue_name, err))
+        while True:
+            try:
+                if self.channel is not None and self.channel.is_open:
+                    self.channel.basic_consume(
+                        queue=self.queue_name,
+                        on_message_callback=on_message_callback,
+                    )
+
+                    self.channel.start_consuming()
+                else:
+                    logging.info(message_info(133, threading.current_thread().name))
+            except pika.exceptions.ChannelClosed:
+                logging.info(message_info(130, threading.current_thread().name))
+            except BaseException as err:
+                logging.warning(message_warning(413, threading.current_thread().name, self.queue_name, err))
+
+            logging.info(message_info(132, self.reconnect_delay_in_seconds))
+            time.sleep(self.reconnect_delay_in_seconds)
+
+            # Reconnect to RabbitMQ queue.
+
+            self.connection, self.channel = self.connect(
+                exit_on_exception=False
+            )
 
     def send(self, message):
         logging.debug(message_debug(916, threading.current_thread().name, self.queue_name, message))
@@ -1359,7 +1396,7 @@ class RabbitmqSubscribeThread(threading.Thread):
     Wrap RabbitMQ behind a Python Queue.
     '''
 
-    def __init__(self, internal_queue, host, exchange, virtual_host, queue_name, routing_key, username, password, passive, prefetch_count):
+    def __init__(self, internal_queue, host, exchange, virtual_host, queue_name, routing_key, username, password, passive, prefetch_count, reconnect_delay_in_seconds):
         threading.Thread.__init__(self)
         logging.debug(message_debug(997, threading.current_thread().name, "RabbitmqSubscribeThread"))
 
@@ -1385,7 +1422,8 @@ class RabbitmqSubscribeThread(threading.Thread):
             virtual_host=virtual_host,
             routing_key=routing_key,
             passive=passive,
-            prefetch_count=prefetch_count
+            prefetch_count=prefetch_count,
+            reconnect_delay_in_seconds=reconnect_delay_in_seconds
         )
 
     def callback(self, message):
@@ -1702,7 +1740,8 @@ class InputRabbitmqMixin():
             self.config.get("rabbitmq_redo_username"),
             self.config.get("rabbitmq_redo_password"),
             self.config.get("rabbitmq_use_existing_entities"),
-            self.config.get("rabbitmq_prefetch_count")
+            self.config.get("rabbitmq_prefetch_count"),
+            self.config.get("rabbitmq_reconnect_delay_in_seconds")
         )
         redo_thread.name = "{0}-{1}".format(threading.current_thread().name, "redo")
         threads.append(redo_thread)
