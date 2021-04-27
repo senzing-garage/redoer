@@ -1375,17 +1375,28 @@ class Rabbitmq:
         logging.debug(message_debug(916, threading.current_thread().name, self.queue_name, message))
         assert type(message) == str
         message_bytes = message.encode()
-        try:
-            self.channel.basic_publish(
-                exchange=self.exchange,
-                routing_key=self.routing_key,
-                body=message_bytes,
-                properties=pika.BasicProperties(
-                    delivery_mode=self.delivery_mode,
-                ),
+        repeat = True
+        while repeat:
+            try:
+                if self.channel is not None and self.channel.is_open:
+                    self.channel.basic_publish(
+                        exchange=self.exchange,
+                        routing_key=self.routing_key,
+                        body=message_bytes,
+                        properties=pika.BasicProperties(
+                            delivery_mode=self.delivery_mode,
+                        ),
+                    )
+                    break
+            except BaseException as err:
+                logging.warning(message_warning(411, threading.current_thread().name, self.queue_name, err, message))
+
+            logging.info(message_info(132, self.reconnect_delay_in_seconds))
+            time.sleep(self.reconnect_delay_in_seconds)
+
+            self.connection, self.channel = self.connect(
+                exit_on_exception=False
             )
-        except BaseException as err:
-            logging.warning(message_warning(411, threading.current_thread().name, self.queue_name, err, message))
 
     def close(self):
         self.connection.close()
