@@ -2010,7 +2010,7 @@ class ExecuteWriteToKafkaMixin():
             logging.warning(message_warning(404, threading.current_thread().name, self.kafka_redo_topic, err, redo_record))
         except confluent_kafka.KafkaException as err:
             logging.warning(message_warning(405, threading.current_thread().name, self.kafka_redo_topic, err, redo_record))
-        except NotImplemented as err:
+        except NotImplementedError as err:
             logging.warning(message_warning(406, threading.current_thread().name, self.kafka_redo_topic, err, redo_record))
         except:
             logging.warning(message_warning(407, threading.current_thread().name, self.kafka_redo_topic, err, redo_record))
@@ -2167,7 +2167,7 @@ class OutputKafkaMixin():
             logging.warning(message_warning(404, threading.current_thread().name, self.kafka_failure_topic, err, message))
         except confluent_kafka.KafkaException as err:
             logging.warning(message_warning(405, threading.current_thread().name, self.kafka_failure_topic, err, message))
-        except NotImplemented as err:
+        except NotImplementedError as err:
             logging.warning(message_warning(406, threading.current_thread().name, self.kafka_failure_topic, err, message))
         except:
             logging.warning(message_warning(407, threading.current_thread().name, self.kafka_failure_topic, err, message))
@@ -2182,7 +2182,7 @@ class OutputKafkaMixin():
             logging.warning(message_warning(404, threading.current_thread().name, self.kafka_info_topic, err, message))
         except confluent_kafka.KafkaException as err:
             logging.warning(message_warning(405, threading.current_thread().name, self.kafka_info_topic, err, message))
-        except NotImplemented as err:
+        except NotImplementedError as err:
             logging.warning(message_warning(406, threading.current_thread().name, self.kafka_info_topic, err, message))
         except:
             logging.warning(message_warning(407, threading.current_thread().name, self.kafka_info_topic, err, message))
