@@ -799,6 +799,7 @@ message_dictionary = {
     "411": "Thread: {0} RabbitMQ queue: {1} Unknown RabbitMQ error: {2} Message: {3}",
     "412": "Thread: {0} RabbitMQ queue: {1} AMQPConnectionError: {2} Could not connect to RabbitMQ host at {3}. The host name maybe wrong, it may not be ready, or your credentials are incorrect. See the RabbitMQ log for more details.",
     "413": "Thread: {0} RabbitMQ queue: {1} Unknown RabbitMQ error: {2}",
+    "414": "Thread: {0} RabbitMQ queue: {1} Error when trying to send message to RabbitMQ: {2}",
     "499": "{0}",
     "500": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}E",
     "561": "Thread: {0} Unknown RabbitMQ error when connecting: {1}",
@@ -1375,8 +1376,7 @@ class Rabbitmq:
         logging.debug(message_debug(916, threading.current_thread().name, self.queue_name, message))
         assert type(message) == str
         message_bytes = message.encode()
-        repeat = True
-        while repeat:
+        while True:
             try:
                 if self.channel is not None and self.channel.is_open:
                     self.channel.basic_publish(
@@ -1388,7 +1388,9 @@ class Rabbitmq:
                         ),
                     )
                     break
-            except BaseException as err:
+            except pika.exceptions.StreamLostError as err:
+                logging.warning(message_warning(414, threading.current_thread().name, self.queue_name, err))
+            except Exception as err:
                 logging.warning(message_warning(411, threading.current_thread().name, self.queue_name, err, message))
 
             logging.info(message_info(132, self.reconnect_delay_in_seconds))
