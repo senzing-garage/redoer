@@ -18,7 +18,7 @@ import datetime
 import json
 import linecache
 import logging
-import multiprocessing
+import queue
 import os
 import pika
 import re
@@ -28,6 +28,7 @@ import subprocess
 import sys
 import threading
 import time
+import functools
 
 # Import Senzing libraries.
 try:
@@ -206,6 +207,11 @@ configuration_locator = {
         "default": None,
         "env": "SENZING_RABBITMQ_FAILURE_VIRTUAL_HOST",
         "cli": "rabbitmq-failure-virtual-host",
+    },
+    "rabbitmq_heartbeat_in_seconds": {
+        "default": 60,
+        "env": "SENZING_RABBITMQ_HEARTBEAT_IN_SECONDS",
+        "cli": "rabbitmq-heartbeat-in-seconds",
     },
     "rabbitmq_host": {
         "default": "localhost:5672",
@@ -542,6 +548,11 @@ def get_parser():
                 "metavar": "SENZING_RABBITMQ_EXCHANGE",
                 "help": "RabbitMQ exchange. Default: SENZING_RABBITMQ_EXCHANGE"
             },
+            "--rabbitmq-heartbeat-in-seconds": {
+                "dest": "rabbitmq_heartbeat_in_seconds",
+                "metavar": "SENZING_RABBITMQ_HEARTBEAT_IN_SECONDS",
+                "help": "RabbitMQ heartbeat. Default: 60"
+            },
             "--rabbitmq-host": {
                 "dest": "rabbitmq_host",
                 "metavar": "SENZING_RABBITMQ_HOST",
@@ -768,6 +779,8 @@ message_dictionary = {
     "131": "Adding redo record to redo queue: {0}",
     "132": "Sleeping {0} seconds before attempting to reconnect to RabbitMQ",
     "133": "RabbitMQ connection is not open. Did opening the connection succeed? Thread {0}",
+    "134": "RabbitMQ connection closed by the broker. Thread {0}. Error: {1}",
+    "135": "Could not ACK a RabbitMQ message. Thread {0}. Error: {1}",
     "160": "{0} LICENSE {0}",
     "161": "          Version: {0} ({1})",
     "162": "         Customer: {0}",
@@ -825,6 +838,7 @@ message_dictionary = {
     "722": "Thread: {0} Kafka commit failed for {1}",
     "723": "Detected inactive thread. Total threads: {0}  Active threads: {1}",
     "730": "There are not enough safe characters to do the translation. Unsafe Characters: {0}; Safe Characters: {1}",
+    "880": "Unspecific error when {1}. Error: {0}",
     "885": "License has expired.",
     "886": "G2Engine.addRecord() bad return code: {0}; JSON: {1}",
     "888": "G2Engine.addRecord() G2ModuleNotInitialized: {0}; JSON: {1}",
@@ -1111,6 +1125,7 @@ def get_configuration(args):
         'log_license_period_in_seconds',
         'monitoring_period_in_seconds',
         'queue_maxsize',
+        'rabbitmq_heartbeat_in_seconds',
         'rabbitmq_reconnect_delay_in_seconds',
         'redo_sleep_time_in_seconds',
         'redo_retry_sleep_time_in_seconds',
@@ -1243,6 +1258,7 @@ class Rabbitmq:
         queue_name,
         exchange,
         virtual_host,
+        heartbeat,
         routing_key,
         passive,
         delivery_mode=2,
@@ -1262,6 +1278,7 @@ class Rabbitmq:
         assert type(delivery_mode) == int
         assert type(prefetch_count) == int
         assert type(virtual_host) == str
+        assert type(heartbeat) == int
 
         # Instance variables.
 
@@ -1282,7 +1299,7 @@ class Rabbitmq:
         self.connection_parameters = pika.ConnectionParameters(
             credentials=self.credentials,
             host=host,
-            heartbeat=0,
+            heartbeat=heartbeat,
             virtual_host=virtual_host
         )
 
@@ -1337,15 +1354,13 @@ class Rabbitmq:
             logging.debug(message_debug(917, threading.current_thread().name, self.queue_name, body))
 
             if callback is not None:
-                my_thread = threading.Thread(target=callback, args=(body,))
+                my_thread = threading.Thread(target=callback, args=(body, method))
                 my_thread.daemon = True
                 my_thread.start()
 
                 while my_thread.is_alive():
                     self.connection.process_data_events()
                     self.connection.sleep(5)
-
-            channel.basic_ack(delivery_tag=method.delivery_tag)
 
         while True:
             try:
@@ -1371,6 +1386,21 @@ class Rabbitmq:
             self.connection, self.channel = self.connect(
                 exit_on_exception=False
             )
+
+    def ack_message(self, delivery_tag):
+        try:
+            cb = functools.partial(self.ack_message_callback, delivery_tag)
+            self.connection.add_callback_threadsafe(cb)
+        except pika.exceptions.ConnectionClosed as err:
+            logging.info(message_info(134, threading.current_thread().name, err))
+        except Exception as err:
+            logging.info(message_info(880, err, "connection.add_callback_threadsafe()"))
+
+    def ack_message_callback(self, delivery_tag):
+        try:
+            self.channel.basic_ack(delivery_tag)
+        except Exception as err:
+            logging.info(message_info(135, threading.current_thread().name, err))
 
     def send(self, message):
         logging.debug(message_debug(916, threading.current_thread().name, self.queue_name, message))
@@ -1404,12 +1434,14 @@ class Rabbitmq:
         self.connection.close()
 
 
+
+
 class RabbitmqSubscribeThread(threading.Thread):
     '''
     Wrap RabbitMQ behind a Python Queue.
     '''
 
-    def __init__(self, internal_queue, host, exchange, virtual_host, queue_name, routing_key, username, password, passive, prefetch_count, reconnect_delay_in_seconds):
+    def __init__(self, internal_queue, host, exchange, virtual_host, heartbeat, queue_name, routing_key, username, password, passive, prefetch_count, reconnect_delay_in_seconds):
         threading.Thread.__init__(self)
         logging.debug(message_debug(997, threading.current_thread().name, "RabbitmqSubscribeThread"))
 
@@ -1433,13 +1465,14 @@ class RabbitmqSubscribeThread(threading.Thread):
             queue_name=queue_name,
             exchange=exchange,
             virtual_host=virtual_host,
+            heartbeat=heartbeat,
             routing_key=routing_key,
             passive=passive,
             prefetch_count=prefetch_count,
             reconnect_delay_in_seconds=reconnect_delay_in_seconds
         )
 
-    def callback(self, message):
+    def callback(self, message, method):
         '''
         Put message into internal queue.
         '''
@@ -1447,7 +1480,10 @@ class RabbitmqSubscribeThread(threading.Thread):
         if type(message) == bytes:
             message = message.decode()
         assert type(message) == str
-        self.internal_queue.put(message)
+        self.internal_queue.put((message, method.delivery_tag))
+
+    def ack_message(self, delivery_tag):
+        self.input_rabbitmq_mixin_rabbitmq.ack_message(delivery_tag)
 
     def run(self):
         self.input_rabbitmq_mixin_rabbitmq.receive(self.callback)
@@ -1650,7 +1686,7 @@ class InputInternalMixin():
             message = self.redo_queue.get()
             logging.debug(message_debug(918, threading.current_thread().name, "internal", message))
             self.config['received_from_redo_queue'] += 1
-            assert type(message) == str
+            assert type(message) == tuple
             yield message
 
 # -----------------------------------------------------------------------------
@@ -1709,7 +1745,7 @@ class InputKafkaMixin():
 
             logging.debug(message_debug(918, threading.current_thread().name, "Kafka", message))
             assert type(message) == str
-            yield message
+            yield message, None
 
             # After successful import into Senzing, tell Kafka we're done with message.
 
@@ -1732,7 +1768,7 @@ class InputRabbitmqMixin():
 
         # Create qn internal queue for this mixin.
 
-        self.input_rabbitmq_mixin_queue = multiprocessing.Queue()
+        self.input_rabbitmq_mixin_queue = queue.Queue()
 
         threads = []
 
@@ -1743,11 +1779,12 @@ class InputRabbitmqMixin():
 
         # Create thread for redo queue.
 
-        redo_thread = RabbitmqSubscribeThread(
+        self.redo_thread = RabbitmqSubscribeThread(
             self.input_rabbitmq_mixin_queue,
             self.config.get("rabbitmq_redo_host"),
             self.config.get("rabbitmq_redo_exchange"),
             virtual_host,
+            self.config.get("rabbitmq_heartbeat_in_seconds"),
             self.config.get("rabbitmq_redo_queue"),
             self.config.get("rabbitmq_redo_routing_key"),
             self.config.get("rabbitmq_redo_username"),
@@ -1756,8 +1793,8 @@ class InputRabbitmqMixin():
             self.config.get("rabbitmq_prefetch_count"),
             self.config.get("rabbitmq_reconnect_delay_in_seconds")
         )
-        redo_thread.name = "{0}-{1}".format(threading.current_thread().name, "redo")
-        threads.append(redo_thread)
+        self.redo_thread.name = "{0}-{1}".format(threading.current_thread().name, "redo")
+        threads.append(self.redo_thread)
 
         # Start threads.
 
@@ -1770,13 +1807,15 @@ class InputRabbitmqMixin():
         This method reads from an internal queue
         populated by the RabbitMQ callback() method.
         '''
-
         while True:
-            message = str(self.input_rabbitmq_mixin_queue.get())
+            message, delivery_tag = self.input_rabbitmq_mixin_queue.get()
             assert type(message) == str
             self.config['received_from_redo_queue'] += 1
             logging.debug(message_debug(918, threading.current_thread().name, "RabbitMQ", message))
-            yield message
+            yield message, delivery_tag
+
+    def acknowledge_read_message(self, delivery_tag):
+        self.redo_thread.ack_message(delivery_tag)
 
 # -----------------------------------------------------------------------------
 # Class: InputSqsMixin
@@ -1840,7 +1879,7 @@ class InputSqsMixin():
 
             logging.debug(message_debug(918, threading.current_thread().name, "SQS", sqs_message_body))
             assert type(sqs_message_body) == str
-            yield sqs_message_body
+            yield sqs_message_body, None
 
             # After successful import into Senzing, tell AWS SQS we're done with message.
 
@@ -1886,6 +1925,7 @@ class ExecuteMixin():
             logging.debug(message_debug(910, threading.current_thread().name, redo_record))
             self.g2_engine.process(redo_record)
             logging.debug(message_debug(911, threading.current_thread().name, redo_record))
+
             self.config['processed_redo_records'] += 1
 
         except G2Exception.G2ModuleNotInitialized as err:
@@ -1935,6 +1975,7 @@ class ExecuteWithInfoMixin():
             logging.debug(message_debug(913, threading.current_thread().name, redo_record))
             self.g2_engine.processWithInfo(redo_record, info_bytearray, self.g2_engine_flags)
             logging.debug(message_debug(914, threading.current_thread().name, redo_record, info_bytearray))
+
             self.config['processed_redo_records'] += 1
         except G2Exception.G2ModuleNotInitialized as err:
             self.send_to_failure_queue(redo_record)
@@ -2037,6 +2078,7 @@ class ExecuteWriteToRabbitmqMixin():
             queue_name=self.config.get("rabbitmq_redo_queue"),
             exchange=self.config.get("rabbitmq_redo_exchange"),
             virtual_host=virtual_host,
+            heartbeat=self.config.get("rabbitmq_heartbeat_in_seconds"),
             routing_key=self.config.get("rabbitmq_redo_routing_key"),
             passive=self.config.get("rabbitmq_use_existing_entities"),
         )
@@ -2211,6 +2253,7 @@ class OutputRabbitmqMixin():
             queue_name=self.config.get("rabbitmq_info_queue"),
             exchange=self.config.get("rabbitmq_info_exchange"),
             virtual_host=info_virtual_host,
+            heartbeat=self.config.get("rabbitmq_heartbeat_in_seconds"),
             routing_key=self.config.get("rabbitmq_info_routing_key"),
             passive=self.config.get("rabbitmq_use_existing_entities"),
         )
@@ -2229,6 +2272,7 @@ class OutputRabbitmqMixin():
             queue_name=self.config.get("rabbitmq_failure_queue"),
             exchange=self.config.get("rabbitmq_failure_exchange"),
             virtual_host=failure_virtual_host,
+            heartbeat=self.config.get("rabbitmq_heartbeat_in_seconds"),
             routing_key=self.config.get("rabbitmq_failure_routing_key"),
             passive=self.config.get("rabbitmq_use_existing_entities"),
         )
@@ -2307,7 +2351,7 @@ class QueueInternalMixin():
         logging.debug(message_debug(996, threading.current_thread().name, "QueueInternalMixin"))
 
     def send_to_redo_queue(self, redo_record):
-        assert type(redo_record) == str
+        assert type(redo_record) == tuple
         self.redo_queue.put(redo_record)
 
 # =============================================================================
@@ -2385,7 +2429,7 @@ class ProcessRedoQueueThread(threading.Thread):
         # Process redo records.
 
         return_code = 0
-        for redo_record in self.redo_records():
+        for redo_record, acknowledge_tag in self.redo_records():
             logging.debug(message_debug(922, threading.current_thread().name, "After generator", redo_record))
 
             # Invoke Governor.
@@ -2397,6 +2441,12 @@ class ProcessRedoQueueThread(threading.Thread):
 
             self.process_redo_record(redo_record)
             logging.debug(message_debug(922, threading.current_thread().name, "After process_redo_record()", redo_record))
+
+            # Acnkowledge reading the message, if available.
+            try:
+                self.acknowledge_read_message(acknowledge_tag)
+            except AttributeError as err:
+                pass
 
         # Log message for thread exiting.
 
@@ -2470,7 +2520,7 @@ class QueueRedoRecordsThread(threading.Thread):
             logging.debug(message_debug(903, threading.current_thread().name, redo_record))
             self.config['redo_records_from_senzing_engine'] += 1
             assert type(redo_record) == str
-            yield redo_record
+            yield redo_record, None
 
     def run(self):
         '''Get redo records from Senzing.  Put redo records in internal queue.'''
@@ -2858,7 +2908,7 @@ def redo_processor(
 
     # Create internal Queue.
 
-    redo_queue = multiprocessing.Queue(queue_maxsize)
+    redo_queue = queue.Queue()
 
     # Get the Senzing G2 resources.
 
