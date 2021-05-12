@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Exposing RabbitMQ virtual host as a settable parameter.
 - If the connection to the RabbitMQ exchange/server is lost, redoer now attempts to reconnect.
 - Reading redo records from RabbitMQ is now more robust against record loss if a container goes down unexpectedly.
+- Updating senzingdata dependency to 2.0.0
 
 ## [1.3.5] - 2021-02-18
 
