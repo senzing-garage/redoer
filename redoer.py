@@ -382,6 +382,7 @@ configuration_locator = {
 # Enumerate keys in 'configuration_locator' that should not be printed to the log.
 
 keys_to_redact = [
+    "engine_configuration_json",
     "g2_database_url_generic",
     "g2_database_url_specific"
 ]
