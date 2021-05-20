@@ -314,7 +314,7 @@ configuration_locator = {
         "cli": "rabbitmq-username",
     },
     "rabbitmq_virtual_host": {
-        "default": None,
+        "default": pika.ConnectionParameters.DEFAULT_VIRTUAL_HOST,
         "env": "SENZING_RABBITMQ_VIRTUAL_HOST",
         "cli": "rabbitmq-virtual-host",
     },
@@ -577,7 +577,7 @@ def get_parser():
             "--rabbitmq-virtual-host": {
                 "dest": "rabbitmq_virtual_host",
                 "metavar": "SENZING_RABBITMQ_VIRTUAL_HOST",
-                "help": "RabbitMQ virtual host. Default: None, which will use the RabbitMQ defined default virtual host"
+                "help": "RabbitMQ virtual host. Default: The RabbitMQ defined default virtual host"
             },
             "--rabbitmq-use-existing-entities": {
                 "dest": "rabbitmq_use_existing_entities",
@@ -1773,18 +1773,13 @@ class InputRabbitmqMixin():
 
         threads = []
 
-        # If virtual host is not specified, get the default value from pika
-        virtual_host = self.config.get("rabbitmq_redo_virtual_host")
-        if virtual_host is None:
-            virtual_host = pika.ConnectionParameters.DEFAULT_VIRTUAL_HOST
-
         # Create thread for redo queue.
 
         self.redo_thread = RabbitmqSubscribeThread(
             self.input_rabbitmq_mixin_queue,
             self.config.get("rabbitmq_redo_host"),
             self.config.get("rabbitmq_redo_exchange"),
-            virtual_host,
+            self.config.get("rabbitmq_redo_virtual_host"),
             self.config.get("rabbitmq_heartbeat_in_seconds"),
             self.config.get("rabbitmq_redo_queue"),
             self.config.get("rabbitmq_redo_routing_key"),
@@ -2067,18 +2062,13 @@ class ExecuteWriteToRabbitmqMixin():
     def __init__(self, *args, **kwargs):
         logging.debug(message_debug(996, threading.current_thread().name, "ExecuteWriteToRabbitmqMixin"))
 
-        # If virtual host is not specified, get the default value from pika
-        virtual_host = self.config.get("rabbitmq_redo_virtual_host")
-        if virtual_host is None:
-            virtual_host = pika.ConnectionParameters.DEFAULT_VIRTUAL_HOST
-
         self.execute_write_to_rabbitmq_mixin_rabbitmq = Rabbitmq(
             username=self.config.get("rabbitmq_redo_username"),
             password=self.config.get("rabbitmq_redo_password"),
             host=self.config.get("rabbitmq_redo_host"),
             queue_name=self.config.get("rabbitmq_redo_queue"),
             exchange=self.config.get("rabbitmq_redo_exchange"),
-            virtual_host=virtual_host,
+            virtual_host=self.config.get("rabbitmq_redo_virtual_host"),
             heartbeat=self.config.get("rabbitmq_heartbeat_in_seconds"),
             routing_key=self.config.get("rabbitmq_redo_routing_key"),
             passive=self.config.get("rabbitmq_use_existing_entities"),
@@ -2242,18 +2232,13 @@ class OutputRabbitmqMixin():
 
         # Connect to RabbitMQ for "info".
 
-        # If virtual host is not specified, get the default value from pika
-        info_virtual_host = self.config.get("rabbitmq_info_virtual_host")
-        if info_virtual_host is None:
-            info_virtual_host = pika.ConnectionParameters.DEFAULT_VIRTUAL_HOST
-
         self.output_rabbitmq_mixin_info_rabbitmq = Rabbitmq(
             username=self.config.get("rabbitmq_info_username"),
             password=self.config.get("rabbitmq_info_password"),
             host=self.config.get("rabbitmq_info_host"),
             queue_name=self.config.get("rabbitmq_info_queue"),
             exchange=self.config.get("rabbitmq_info_exchange"),
-            virtual_host=info_virtual_host,
+            virtual_host=self.config.get("rabbitmq_info_virtual_host"),
             heartbeat=self.config.get("rabbitmq_heartbeat_in_seconds"),
             routing_key=self.config.get("rabbitmq_info_routing_key"),
             passive=self.config.get("rabbitmq_use_existing_entities"),
@@ -2261,18 +2246,13 @@ class OutputRabbitmqMixin():
 
         # Connect to RabbitMQ for "failure".
 
-        # If virtual host is not specified, get the default value from pika
-        failure_virtual_host = self.config.get("rabbitmq_failure_virtual_host")
-        if failure_virtual_host is None:
-            failure_virtual_host = pika.ConnectionParameters.DEFAULT_VIRTUAL_HOST
-
         self.output_rabbitmq_mixin_failure_rabbitmq = Rabbitmq(
             username=self.config.get("rabbitmq_failure_username"),
             password=self.config.get("rabbitmq_failure_password"),
             host=self.config.get("rabbitmq_failure_host"),
             queue_name=self.config.get("rabbitmq_failure_queue"),
             exchange=self.config.get("rabbitmq_failure_exchange"),
-            virtual_host=failure_virtual_host,
+            virtual_host=self.config.get("rabbitmq_failure_virtual_host"),
             heartbeat=self.config.get("rabbitmq_heartbeat_in_seconds"),
             routing_key=self.config.get("rabbitmq_failure_routing_key"),
             passive=self.config.get("rabbitmq_use_existing_entities"),
