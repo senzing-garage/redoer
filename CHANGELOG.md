@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 [markdownlint](https://dlaa.me/markdownlint/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.7] - 2021-06-09
+
+### Added in 1.3.7
+
+- Redacting passwords when logging the contents of engine_configuration_json
+- Ensuring that a record pulled from an SQS queue that fails to load is not removed from the queue so it will be retried/dead lettered.
+- Improving how the RabbitMQ virtual host default is handled
+
 ## [1.3.6] - 2021-5-12
 
 ### Added in 1.3.6
