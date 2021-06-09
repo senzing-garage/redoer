@@ -1875,13 +1875,16 @@ class InputSqsMixin():
 
             logging.debug(message_debug(918, threading.current_thread().name, "SQS", sqs_message_body))
             assert type(sqs_message_body) == str
-            yield sqs_message_body, None
+            yield sqs_message_body, sqs_message_receipt_handle
 
-            # After successful import into Senzing, tell AWS SQS we're done with message.
+    def acknowledge_read_message(self, delivery_tag):
+        '''
+        Tell AWS SQS we're done with message.
+        '''
 
-            self.sqs.delete_message(
+        self.sqs.delete_message(
                 QueueUrl=self.queue_url,
-                ReceiptHandle=sqs_message_receipt_handle
+                ReceiptHandle=delivery_tag
             )
 
 # =============================================================================
@@ -1931,7 +1934,7 @@ class ExecuteMixin():
             # failed connection exception.
             if is_db_connection_error(err.args[0]):
                 logging.warning(message_warning(710, threading.current_thread().name, err))
-                return
+                return False
             if self.is_g2_default_configuration_changed():
                 self.update_active_g2_configuration()
                 logging.debug(message_debug(906, threading.current_thread().name, redo_record))
@@ -1940,6 +1943,8 @@ class ExecuteMixin():
                 self.config['processed_redo_records'] += 1
             else:
                 exit_error(709, threading.current_thread().name, err)
+
+        return True
 
 # -----------------------------------------------------------------------------
 # Class: ExecuteWithInfoMixin
@@ -1973,6 +1978,7 @@ class ExecuteWithInfoMixin():
             logging.debug(message_debug(914, threading.current_thread().name, redo_record, info_bytearray))
 
             self.config['processed_redo_records'] += 1
+
         except G2Exception.G2ModuleNotInitialized as err:
             self.send_to_failure_queue(redo_record)
             exit_error(707, threading.current_thread().name, err, info_bytearray.decode())
@@ -1981,7 +1987,7 @@ class ExecuteWithInfoMixin():
             # failed connection exception.
             if is_db_connection_error(err.args[0]):
                 logging.warning(message_warning(710, threading.current_thread().name, err))
-                return
+                return False
             if self.is_g2_default_configuration_changed():
                 self.update_active_g2_configuration()
                 logging.debug(message_debug(906, threading.current_thread().name, redo_record))
@@ -2002,6 +2008,8 @@ class ExecuteWithInfoMixin():
 
         if filtered_info_json:
             self.send_to_info_queue(filtered_info_json)
+
+        return True
 
 # -----------------------------------------------------------------------------
 # Class: ExecuteWriteToKafkaMixin
@@ -2039,18 +2047,25 @@ class ExecuteWriteToKafkaMixin():
 
         logging.debug(message_debug(916, threading.current_thread().name, self.kafka_redo_topic, redo_record))
         assert type(redo_record) == str
+        load_succeeded = True
 
         try:
             self.kafka_producer.produce(self.kafka_redo_topic, redo_record, on_delivery=self.on_kafka_delivery)
             self.config['sent_to_redo_queue'] += 1
         except BufferError as err:
             logging.warning(message_warning(404, threading.current_thread().name, self.kafka_redo_topic, err, redo_record))
+            load_succeeded = False
         except confluent_kafka.KafkaException as err:
             logging.warning(message_warning(405, threading.current_thread().name, self.kafka_redo_topic, err, redo_record))
+            load_succeeded = False
         except NotImplementedError as err:
             logging.warning(message_warning(406, threading.current_thread().name, self.kafka_redo_topic, err, redo_record))
+            load_succeeded = False
         except:
             logging.warning(message_warning(407, threading.current_thread().name, self.kafka_redo_topic, err, redo_record))
+            load_succeeded = False
+
+        return load_succeeded
 
 # -----------------------------------------------------------------------------
 # Class: ExecuteWriteToRabbitmqMixin
@@ -2084,6 +2099,8 @@ class ExecuteWriteToRabbitmqMixin():
         assert type(redo_record) == str
         self.execute_write_to_rabbitmq_mixin_rabbitmq.send(redo_record)
         self.config['sent_to_redo_queue'] += 1
+
+        return True
 
 # -----------------------------------------------------------------------------
 # Class: ExecuteWriteToSqsMixin
@@ -2123,6 +2140,8 @@ class ExecuteWriteToSqsMixin():
             MessageBody=(redo_record),
         )
         self.config['sent_to_redo_queue'] += 1
+
+        return True
 
 # =============================================================================
 # Mixins: Output*
@@ -2420,14 +2439,15 @@ class ProcessRedoQueueThread(threading.Thread):
 
             # Process record based on the Mixin's process_redo_record() method.
 
-            self.process_redo_record(redo_record)
+            process_succeeded = self.process_redo_record(redo_record)
             logging.debug(message_debug(922, threading.current_thread().name, "After process_redo_record()", redo_record))
 
             # Acnkowledge reading the message, if available.
-            try:
-                self.acknowledge_read_message(acknowledge_tag)
-            except AttributeError as err:
-                pass
+            if process_succeeded:
+                try:
+                    self.acknowledge_read_message(acknowledge_tag)
+                except AttributeError as err:
+                    pass
 
         # Log message for thread exiting.
 
