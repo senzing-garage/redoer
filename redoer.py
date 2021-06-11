@@ -319,7 +319,7 @@ configuration_locator = {
         "cli": "rabbitmq-virtual-host",
     },
     "redo_sleep_time_in_seconds": {
-        "default": 60,
+        "default": 10,
         "env": "SENZING_REDO_SLEEP_TIME_IN_SECONDS",
         "cli": "redo-sleep-time-in-seconds",
     },
