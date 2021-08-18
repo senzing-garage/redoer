@@ -20,16 +20,18 @@ default: help
 # -----------------------------------------------------------------------------
 
 .PHONY: docker-build
-docker-build: docker-rmi-for-build
+docker-build:
 	docker build \
 	    --tag $(DOCKER_IMAGE_NAME) \
 		--tag $(DOCKER_IMAGE_NAME):$(GIT_VERSION) \
 		.
 
-.PHONY: docker-build-development-cache
-docker-build-development-cache: docker-rmi-for-build-development-cache
+.PHONY: docker-build-with-data
+docker-build-with-data:
 	docker build \
-		--tag $(DOCKER_IMAGE_TAG) \
+		--file Dockerfile-with-data \
+		--tag $(DOCKER_IMAGE_NAME)-with-data \
+		--tag $(DOCKER_IMAGE_NAME)-with-data:$(GIT_VERSION) \
 		.
 
 # -----------------------------------------------------------------------------
@@ -42,12 +44,14 @@ docker-rmi-for-build:
 		$(DOCKER_IMAGE_NAME):$(GIT_VERSION) \
 		$(DOCKER_IMAGE_NAME)
 
-.PHONY: docker-rmi-for-build-development-cache
-docker-rmi-for-build-development-cache:
-	-docker rmi --force $(DOCKER_IMAGE_TAG)
+.PHONY: docker-rmi-for-build-with-data
+docker-rmi-for-build-with-data:
+	-docker rmi --force \
+		$(DOCKER_IMAGE_NAME)-with-data:$(GIT_VERSION) \
+		$(DOCKER_IMAGE_NAME)-with-data
 
 .PHONY: clean
-clean: docker-rmi-for-build docker-rmi-for-build-development-cache
+clean: docker-rmi-for-build docker-rmi-for-build-with-data
 
 # -----------------------------------------------------------------------------
 # Help

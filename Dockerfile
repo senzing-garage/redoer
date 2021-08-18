@@ -1,11 +1,11 @@
 ARG BASE_IMAGE=senzing/senzing-base:1.6.1
 FROM ${BASE_IMAGE}
 
-ENV REFRESHED_AT=2021-07-15
+ENV REFRESHED_AT=2021-08-12
 
 LABEL Name="senzing/redoer" \
       Maintainer="support@senzing.com" \
-      Version="1.3.9"
+      Version="1.3.10"
 
 HEALTHCHECK CMD ["/app/healthcheck.sh"]
 
