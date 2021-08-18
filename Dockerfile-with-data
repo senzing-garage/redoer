@@ -7,6 +7,12 @@ LABEL Name="senzing/redoer-with-data" \
       Maintainer="support@senzing.com" \
       Version="1.3.10"
 
+# SENZING_ACCEPT_EULA to be replaced by --build-arg
+
+ARG SENZING_ACCEPT_EULA=no
+
+# Define health check
+
 HEALTHCHECK CMD ["/app/healthcheck.sh"]
 
 # Run as "root" for system installation.
