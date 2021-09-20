@@ -1732,10 +1732,61 @@ class MonitorThread(threading.Thread):
 #   Methods:
 #   - redo_records() -> generated list of strings
 #   Classes:
-#   - InputInternalMixin - Gets redo records from internal queue.
+#   - InputAzureQueueMixin - Gets redo records from Azure Queue
+#   - InputInternalMixin - Gets redo records from internal queue
 #   - InputKafkaMixin - Gets redo records from Kafka
 #   - InputRabbitmqMixin - Gets redo records from RabbitMQ
+#   - InputSqsMixin - Gets redo records from AWS SQS
 # =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# Class: InputAzureMixin
+# -----------------------------------------------------------------------------
+
+class InputAzureMixin():
+
+    def __init__(self, *args, **kwargs):
+        logging.debug(message_debug(996, threading.current_thread().name, "InputAzureMixin"))
+        self.connection_string = config.get("azure_connection_string")
+        self.failure_connection_string = config.get("azure_failure_connection_string")
+        self.failure_queue_name = config.get("azure_failure_queue_name")
+        self.queue_name = config.get("azure_queue_name")
+
+        # Create objects.
+
+        self.servicebus_client = ServiceBusClient.from_connection_string(self.connection_string)
+        self.receiver = self.servicebus_client.get_queue_receiver(queue_name=self.queue_name)
+
+        if self.failure_connection_string and self.failure_queue_name:
+            self.failure_queue_enabled = True
+            self.failure_servicebus_client = ServiceBusClient.from_connection_string(self.failure_connection_string)
+            self.failure_sender = self.servicebus_client.get_queue_sender(queue_name=self.failure_queue_name)
+
+    def redo_records(self):
+        '''
+        Generator that produces Senzing redo records
+        retrieved from a Azure Queue.
+        '''
+
+        # In a loop, get messages from AWS SQS.
+
+        while True:
+
+            for queue_message in self.receiver:
+
+                # As a generator, give the value to the co-routine.
+
+                logging.debug(message_debug(918, threading.current_thread().name, "Azure Queue", message_body))
+                assert type(message_body) == str
+                yield message_body, queue_message
+
+    def acknowledge_read_message(self, queue_message):
+        '''
+        Tell Azure Queue we're done with message.
+        '''
+
+        self.receiver.complete_message(queue_message)
 
 # -----------------------------------------------------------------------------
 # Class: InputInternalMixin
