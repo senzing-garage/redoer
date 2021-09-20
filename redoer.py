@@ -63,6 +63,36 @@ reserved_character_list = [';', ',', '/', '?', ':', '@', '=', '&']
 # 1) Command line options, 2) Environment variables, 3) Configuration files, 4) Default values
 
 configuration_locator = {
+    "azure_connection_string": {
+        "default": None,
+        "env": "SENZING_AZURE_CONNECTION_STRING",
+        "cli": "azure-connection-string"
+    },
+    "azure_failure_connection_string": {
+        "default": None,
+        "env": "SENZING_AZURE_FAILURE_CONNECTION_STRING",
+        "cli": "azure-failure-connection-string"
+    },
+    "azure_failure_queue_name": {
+        "default": None,
+        "env": "SENZING_AZURE_FAILURE_QUEUE_NAME",
+        "cli": "azure-failure-queue-name"
+    },
+    "azure_info_connection_string": {
+        "default": None,
+        "env": "SENZING_AZURE_INFO_CONNECTION_STRING",
+        "cli": "azure-info-connection-string"
+    },
+    "azure_info_queue_name": {
+        "default": None,
+        "env": "SENZING_AZURE_INFO_QUEUE_NAME",
+        "cli": "azure-info-queue-name"
+    },
+    "azure_queue_name": {
+        "default": None,
+        "env": "SENZING_AZURE_QUEUE_NAME",
+        "cli": "azure-queue-name"
+    },
     "config_path": {
         "default": "/etc/opt/senzing",
         "env": "SENZING_CONFIG_PATH",
@@ -265,8 +295,8 @@ configuration_locator = {
     },
     "rabbitmq_redo_exchange": {
         "default": None,
-        "env": "SENZING_RABBITMQ_INFO_EXCHANGE",
-        "cli": "rabbitmq-info-exchange",
+        "env": "SENZING_RABBITMQ_REDO_EXCHANGE",
+        "cli": "rabbitmq-redo-exchange",
     },
     "rabbitmq_reconnect_delay_in_seconds": {
         "default": "60",
@@ -448,6 +478,10 @@ def get_parser():
             "help": 'Read Senzing redo records from Senzing SDK, send to G2Engine.processWithInfo(), results sent to AWS SQS.',
             "argument_aspects": ["engine", "threads", "monitoring", "sqs-redo", "sqs-info", "sqs-failure"],
         },
+        'write-to-azure-queue': {
+            "help": 'Read Senzing redo records from Senzing SDK and send to Azure Message Bus queue.',
+            "argument_aspects": ["engine", "threads", "monitoring", "azure-queue", "azure-queue-redo"],
+        },
         'write-to-kafka': {
             "help": 'Read Senzing redo records from Senzing SDK and send to Kafka.',
             "argument_aspects": ["engine", "threads", "monitoring", "kafka", "kafka-redo"],
@@ -481,6 +515,42 @@ def get_parser():
     # Define argument_aspects.
 
     argument_aspects = {
+        "azure-queue": {
+            "--azure-connection-string": {
+                "dest": "azure_connection_string",
+                "metavar": "SENZING_AZURE_CONNECTION_STRING",
+                "help": "Azure Queue connection string. Default: none"
+            },
+            "--azure-queue-name": {
+                "dest": "azure_queue_name",
+                "metavar": "SENZING_AZURE_QUEUE_NAME",
+                "help": "Azure Queue name. Default: none"
+            },
+        },
+        "azure-failure-queue": {
+            "--azure-failure-connection-string": {
+                "dest": "azure_failure_connection_string",
+                "metavar": "SENZING_AZURE_FAILURE_CONNECTION_STRING",
+                "help": "Azure Queue connection string for failures. Default: none"
+            },
+            "--azure-failure-queue-name": {
+                "dest": "azure_failure_queue_name",
+                "metavar": "SENZING_FAILURE_AZURE_QUEUE_NAME",
+                "help": "Azure Queue name for failures. Default: none"
+            },
+        },
+        "azure-info-queue": {
+            "--azure-info-connection-string": {
+                "dest": "azure_info_connection_string",
+                "metavar": "SENZING_AZURE_INFO_CONNECTION_STRING",
+                "help": "Azure Queue connection string for withInfo. Default: none"
+            },
+            "--azure-info-queue-name": {
+                "dest": "azure_info_queue_name",
+                "metavar": "SENZING_INFO_AZURE_QUEUE_NAME",
+                "help": "Azure Queue name for withInfo. Default: none"
+            },
+        },
         "engine": {
             "--engine-configuration-json": {
                 "dest": "engine_configuration_json",
@@ -1707,7 +1777,7 @@ class InputKafkaMixin():
             'group.id': self.config.get("kafka_redo_group"),
             'enable.auto.commit': False,
             'auto.offset.reset': 'earliest'
-            }
+        }
         self.consumer = confluent_kafka.Consumer(consumer_configuration)
         self.consumer.subscribe([self.config.get("kafka_redo_topic")])
 
@@ -1883,9 +1953,9 @@ class InputSqsMixin():
         '''
 
         self.sqs.delete_message(
-                QueueUrl=self.queue_url,
-                ReceiptHandle=delivery_tag
-            )
+            QueueUrl=self.queue_url,
+            ReceiptHandle=delivery_tag
+        )
 
 # =============================================================================
 # Mixins: Execute*
@@ -2061,7 +2131,7 @@ class ExecuteWriteToKafkaMixin():
         except NotImplementedError as err:
             logging.warning(message_warning(406, threading.current_thread().name, self.kafka_redo_topic, err, redo_record))
             load_succeeded = False
-        except:
+        except Exception as err:
             logging.warning(message_warning(407, threading.current_thread().name, self.kafka_redo_topic, err, redo_record))
             load_succeeded = False
 
@@ -2149,10 +2219,83 @@ class ExecuteWriteToSqsMixin():
 #   - send_to_failure_queue(message)
 #   - send_to_info_queue(message)
 #   Classes:
+#   - OutputAzureQueueMixin - Send to Azure queue
 #   - OutputInternalMixin - Send to log
 #   - OutputKafkaMixin - Send to Kafka
 #   - OutputRabbitmqMixin - Send to RabbitMQ
+#   - OutputSqsMixin - Send to AWS SQS
 # =============================================================================
+
+# -----------------------------------------------------------------------------
+# Class: OutputAzureQueueMixin
+# -----------------------------------------------------------------------------
+
+
+class OutputAzureQueueMixin():
+    ''' This is a "null object". '''
+
+    def __init__(self, *args, **kwargs):
+        logging.debug(message_debug(996, threading.current_thread().name, "OutputInternalMixin"))
+        self.connection_string = config.get("azure_connection_string")
+        self.queue_name = config.get("azure_queue_name")
+        self.servicebus_client = ServiceBusClient.from_connection_string(self.connection_string)
+        self.sender = self.servicebus_client.get_queue_sender(queue_name=self.queue_name)
+
+        # Create sqs object.
+        # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/sqs.html
+        # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/core/session.html
+
+        regular_expression = "^([^/]+://[^/]+)/"
+        regex = re.compile(regular_expression)
+        match = regex.match(self.info_queue_url)
+        if not match:
+            exit_error(750, self.info_queue_url)
+        endpoint_url = match.group(1)
+        self.sqs = boto3.client("sqs", endpoint_url=endpoint_url)
+
+    def send_to_failure_queue(self, message):
+        assert type(message) == str
+        response = self.sqs.send_message(
+            QueueUrl=self.failure_queue_url,
+            DelaySeconds=10,
+            MessageAttributes={},
+            MessageBody=(message),
+        )
+        self.config['sent_to_failure_queue'] += 1
+
+    def send_to_info_queue(self, message):
+        assert type(message) == str
+        response = self.sqs.send_message(
+            QueueUrl=self.info_queue_url,
+            DelaySeconds=10,
+            MessageAttributes={},
+            MessageBody=(message),
+        )
+        self.config['sent_to_info_queue'] += 1
+
+
+----------------
+
+
+class PrintAzureQueueMixin():
+
+    def __init__(self, config=None, *args, **kwargs):
+        logging.debug(message_debug(996, threading.current_thread().name, "PrintAzureQueueMixin"))
+
+        self.connection_string = config.get("azure_connection_string")
+        self.queue_name = config.get("azure_queue_name")
+        self.servicebus_client = ServiceBusClient.from_connection_string(self.connection_string)
+        self.sender = self.servicebus_client.get_queue_sender(queue_name=self.queue_name)
+
+    def print(self, message):
+        assert isinstance(message, str)
+
+        service_bus_message = ServiceBusMessage(message)
+        self.sender.send_messages(service_bus_message)
+
+    def close(self):
+        self.sender.close()
+        self.servicebus_client.close()
 
 # -----------------------------------------------------------------------------
 # Class: OutputInternalMixin
@@ -2221,7 +2364,7 @@ class OutputKafkaMixin():
             logging.warning(message_warning(405, threading.current_thread().name, self.kafka_failure_topic, err, message))
         except NotImplementedError as err:
             logging.warning(message_warning(406, threading.current_thread().name, self.kafka_failure_topic, err, message))
-        except:
+        except Exception as err:
             logging.warning(message_warning(407, threading.current_thread().name, self.kafka_failure_topic, err, message))
 
     def send_to_info_queue(self, message):
@@ -2236,7 +2379,7 @@ class OutputKafkaMixin():
             logging.warning(message_warning(405, threading.current_thread().name, self.kafka_info_topic, err, message))
         except NotImplementedError as err:
             logging.warning(message_warning(406, threading.current_thread().name, self.kafka_info_topic, err, message))
-        except:
+        except Exception as err:
             logging.warning(message_warning(407, threading.current_thread().name, self.kafka_info_topic, err, message))
 
 # -----------------------------------------------------------------------------
@@ -2288,7 +2431,7 @@ class OutputRabbitmqMixin():
         self.config['sent_to_info_queue'] += 1
 
 # -----------------------------------------------------------------------------
-# Class: OutputInternalMixin
+# Class: OutputSqsMixin
 # -----------------------------------------------------------------------------
 
 
@@ -2567,6 +2710,44 @@ class QueueRedoRecordsInternalThread(QueueRedoRecordsThread, QueueInternalMixin)
 
     def __init__(self, *args, **kwargs):
         logging.debug(message_debug(997, threading.current_thread().name, "QueueRedoRecordsInternalThread"))
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
+
+# ---- Azure Queue related ----------------------------------------------------
+
+
+class ProcessReadFromAzureQueueThread(ProcessRedoQueueThread, InputAzureQueueMixin, ExecuteMixin, OutputInternalMixin):
+
+    def __init__(self, *args, **kwargs):
+        logging.debug(message_debug(
+            997, threading.current_thread().name, "ProcessReadFromAzureQueueThread"))
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
+
+
+class ProcessReadFromAzureQueueWithinfoThread(ProcessRedoQueueThread, InputAzureQueueMixin, ExecuteWithInfoMixin, OutputAzureQueueMixin):
+
+    def __init__(self, *args, **kwargs):
+        logging.debug(message_debug(997, threading.current_thread(
+        ).name, "ProcessReadFromAzureQueueWithinfoThread"))
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
+
+
+class ProcessRedoWithinfoAzureQueueThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWithInfoMixin, OutputAzureQueueMixin):
+
+    def __init__(self, *args, **kwargs):
+        logging.debug(message_debug(997, threading.current_thread(
+        ).name, "ProcessRedoWithinfoAzureQueueThread"))
+        for base in type(self).__bases__:
+            base.__init__(self, *args, **kwargs)
+
+
+class QueueRedoRecordsAzureQueueThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWriteToAzureQueueMixin):
+
+    def __init__(self, *args, **kwargs):
+        logging.debug(message_debug(
+            997, threading.current_thread().name, "QueueRedoRecordsAzureQueueThread"))
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
@@ -3004,6 +3185,22 @@ def do_docker_acceptance_test(args):
     logging.info(exit_template(config))
 
 
+def do_read_from_azure_queue(args):
+    '''
+    Read Senzing redo records from Azure Queue and send to G2Engine.process().
+    "withinfo" is not returned.
+    '''
+
+    options_to_defaults_map = {}
+
+    redo_processor(
+        args=args,
+        options_to_defaults_map=options_to_defaults_map,
+        process_thread=ProcessReadFromAzureQueueThread,
+        monitor_thread=MonitorThread
+    )
+
+
 def do_read_from_kafka(args):
     '''
     Read Senzing redo records from Kafka and send to G2Engine.process().
@@ -3056,6 +3253,22 @@ def do_read_from_sqs(args):
         args=args,
         options_to_defaults_map=options_to_defaults_map,
         process_thread=ProcessReadFromSqsThread,
+        monitor_thread=MonitorThread
+    )
+
+
+def do_read_from_azure_queue_withinfo(args):
+    '''
+    Read Senzing redo records from Azure queue and send to G2Engine.processWithInfo().
+    "withinfo" returned is sent to Azure queue.
+    '''
+
+    options_to_defaults_map = {}
+
+    redo_processor(
+        args=args,
+        options_to_defaults_map=options_to_defaults_map,
+        process_thread=ProcessReadFromAzureQueueWithinfoThread,
         monitor_thread=MonitorThread
     )
 
@@ -3138,6 +3351,23 @@ def do_redo(args):
         args=args,
         read_thread=QueueRedoRecordsInternalThread,
         process_thread=ProcessRedoThread,
+        monitor_thread=MonitorThread
+    )
+
+
+def do_redo_withinfo_azure_queue(args):
+    '''
+    Read Senzing redo records from Senzing SDK and send to G2Engine.processWithInfo().
+    No external queues are used.  "withinfo" returned is sent to Azure queue.
+    '''
+
+    options_to_defaults_map = {}
+
+    redo_processor(
+        args=args,
+        options_to_defaults_map=options_to_defaults_map,
+        read_thread=QueueRedoRecordsInternalThread,
+        process_thread=ProcessRedoWithinfoAzureQueueThread,
         monitor_thread=MonitorThread
     )
 
@@ -3237,6 +3467,23 @@ def do_sleep(args):
     # Epilog.
 
     logging.info(exit_template(config))
+
+
+def do_write_to_azure_queue(args):
+    '''
+    Read Senzing redo records from Senzing SDK and send to Azure Queue.
+    No g2_engine processing is done.
+    '''
+
+    options_to_defaults_map = {}
+
+    redo_processor(
+        args=args,
+        options_to_defaults_map=options_to_defaults_map,
+        read_thread=QueueRedoRecordsInternalThread,
+        process_thread=QueueRedoRecordsAzureQueueThread,
+        monitor_thread=MonitorThread
+    )
 
 
 def do_write_to_kafka(args):
