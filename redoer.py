@@ -2130,6 +2130,7 @@ class ExecuteWithInfoMixin():
 # Class: ExecuteWriteToAzureQueueMixin
 # -----------------------------------------------------------------------------
 
+
 class ExecuteWriteToAzureQueueMixin():
 
     def __init__(self, *args, **kwargs):
@@ -2791,6 +2792,7 @@ class QueueRedoRecordsAzureQueueThread(ProcessRedoQueueThread, InputInternalMixi
             base.__init__(self, *args, **kwargs)
 
 # ---- Kafka related ----------------------------------------------------------
+
 
 class ProcessReadFromKafkaThread(ProcessRedoQueueThread, InputKafkaMixin, ExecuteMixin, OutputInternalMixin):
 
