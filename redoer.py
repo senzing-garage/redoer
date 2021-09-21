@@ -10,6 +10,8 @@
 #        Senzing redo record.
 # -----------------------------------------------------------------------------
 
+# Import from standard library. https://docs.python.org/3/library/
+
 import argparse
 import datetime
 import functools
@@ -27,12 +29,15 @@ import threading
 import time
 from urllib.parse import urlparse, urlunparse
 
+# Import from https://pypi.org/
+
 import boto3
 import confluent_kafka
 import pika
 from azure.servicebus import ServiceBusClient, ServiceBusMessage
 
-# Import Senzing libraries.
+# Import from Senzing
+
 try:
     import G2Exception
     from G2ConfigMgr import G2ConfigMgr
@@ -40,6 +45,8 @@ try:
     from G2Product import G2Product
 except ImportError:
     pass
+
+# Metadata
 
 __all__ = []
 __version__ = "1.4.0"  # See https://www.python.org/dev/peps/pep-0396/
