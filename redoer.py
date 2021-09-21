@@ -40,9 +40,9 @@ except ImportError:
     pass
 
 __all__ = []
-__version__ = "1.3.10"  # See https://www.python.org/dev/peps/pep-0396/
+__version__ = "1.4.0"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2021-08-12'
+__updated__ = '2021-09-21'
 
 SENZING_PRODUCT_ID = "5010"  # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 log_format = '%(asctime)s %(message)s'
@@ -1341,15 +1341,15 @@ class Rabbitmq:
 
         # Check input parameter data types.
 
-        assert type(username) == str
-        assert type(password) == str
-        assert type(host) == str
-        assert type(queue_name) == str
-        assert type(exchange) == str
-        assert type(delivery_mode) == int
-        assert type(prefetch_count) == int
-        assert type(virtual_host) == str
-        assert type(heartbeat) == int
+        assert isinstance(delivery_mode, int)
+        assert isinstance(exchange, str)
+        assert isinstance(heartbeat, int)
+        assert isinstance(host, str)
+        assert isinstance(password, str)
+        assert isinstance(prefetch_count, int)
+        assert isinstance(queue_name, str)
+        assert isinstance(username, str)
+        assert isinstance(virtual_host, str)
 
         # Instance variables.
 
@@ -1505,8 +1505,6 @@ class Rabbitmq:
         self.connection.close()
 
 
-
-
 class RabbitmqSubscribeThread(threading.Thread):
     '''
     Wrap RabbitMQ behind a Python Queue.
@@ -1550,7 +1548,7 @@ class RabbitmqSubscribeThread(threading.Thread):
         logging.debug(message_debug(917, threading.current_thread().name, self.queue_name, message))
         if type(message) == bytes:
             message = message.decode()
-        assert type(message) == str
+        assert isinstance(message, str)
         self.internal_queue.put((message, method.delivery_tag))
 
     def ack_message(self, delivery_tag):
@@ -1748,20 +1746,13 @@ class InputAzureMixin():
 
     def __init__(self, *args, **kwargs):
         logging.debug(message_debug(996, threading.current_thread().name, "InputAzureMixin"))
-        self.connection_string = config.get("azure_connection_string")
-        self.failure_connection_string = config.get("azure_failure_connection_string")
-        self.failure_queue_name = config.get("azure_failure_queue_name")
-        self.queue_name = config.get("azure_queue_name")
+        connection_string = config.get("azure_connection_string")
+        queue_name = config.get("azure_queue_name")
 
         # Create objects.
 
-        self.servicebus_client = ServiceBusClient.from_connection_string(self.connection_string)
-        self.receiver = self.servicebus_client.get_queue_receiver(queue_name=self.queue_name)
-
-        if self.failure_connection_string and self.failure_queue_name:
-            self.failure_queue_enabled = True
-            self.failure_servicebus_client = ServiceBusClient.from_connection_string(self.failure_connection_string)
-            self.failure_sender = self.servicebus_client.get_queue_sender(queue_name=self.failure_queue_name)
+        self.servicebus_client = ServiceBusClient.from_connection_string(connection_string)
+        self.receiver = self.servicebus_client.get_queue_receiver(queue_name=queue_name)
 
     def redo_records(self):
         '''
@@ -1774,11 +1765,12 @@ class InputAzureMixin():
         while True:
 
             for queue_message in self.receiver:
+                message_body = str(queue_message)
 
                 # As a generator, give the value to the co-routine.
 
                 logging.debug(message_debug(918, threading.current_thread().name, "Azure Queue", message_body))
-                assert type(message_body) == str
+                assert isinstance(message_body, str)
                 yield message_body, queue_message
 
     def acknowledge_read_message(self, queue_message):
@@ -1807,8 +1799,8 @@ class InputInternalMixin():
         while True:
             message = self.redo_queue.get()
             logging.debug(message_debug(918, threading.current_thread().name, "internal", message))
+            assert isinstance(message, tuple)
             self.config['received_from_redo_queue'] += 1
-            assert type(message) == tuple
             yield message
 
 # -----------------------------------------------------------------------------
@@ -1866,7 +1858,7 @@ class InputKafkaMixin():
             # As a generator, give the value to the co-routine.
 
             logging.debug(message_debug(918, threading.current_thread().name, "Kafka", message))
-            assert type(message) == str
+            assert isinstance(message, str)
             yield message, None
 
             # After successful import into Senzing, tell Kafka we're done with message.
@@ -1926,9 +1918,9 @@ class InputRabbitmqMixin():
         '''
         while True:
             message, delivery_tag = self.input_rabbitmq_mixin_queue.get()
-            assert type(message) == str
-            self.config['received_from_redo_queue'] += 1
             logging.debug(message_debug(918, threading.current_thread().name, "RabbitMQ", message))
+            assert isinstance(message, str)
+            self.config['received_from_redo_queue'] += 1
             yield message, delivery_tag
 
     def acknowledge_read_message(self, delivery_tag):
@@ -1995,7 +1987,7 @@ class InputSqsMixin():
             # As a generator, give the value to the co-routine.
 
             logging.debug(message_debug(918, threading.current_thread().name, "SQS", sqs_message_body))
-            assert type(sqs_message_body) == str
+            assert isinstance(sqs_message_body, str)
             yield sqs_message_body, sqs_message_receipt_handle
 
     def acknowledge_read_message(self, delivery_tag):
@@ -2037,7 +2029,7 @@ class ExecuteMixin():
         '''
 
         logging.debug(message_debug(919, threading.current_thread().name, redo_record))
-        assert type(redo_record) == str
+        assert isinstance(redo_record, str)
 
         # Call g2_engine.process() and handle "edge" cases.
 
@@ -2085,7 +2077,7 @@ class ExecuteWithInfoMixin():
         '''
 
         logging.debug(message_debug(919, threading.current_thread().name, redo_record))
-        assert type(redo_record) == str
+        assert isinstance(redo_record, str)
 
         # Additional parameters for processWithInfo().
 
@@ -2167,7 +2159,8 @@ class ExecuteWriteToKafkaMixin():
         '''
 
         logging.debug(message_debug(916, threading.current_thread().name, self.kafka_redo_topic, redo_record))
-        assert type(redo_record) == str
+        assert isinstance(redo_record, str)
+
         load_succeeded = True
 
         try:
@@ -2217,7 +2210,8 @@ class ExecuteWriteToRabbitmqMixin():
         '''
 
         logging.debug(message_debug(919, threading.current_thread().name, redo_record))
-        assert type(redo_record) == str
+        assert isinstance(redo_record, str)
+
         self.execute_write_to_rabbitmq_mixin_rabbitmq.send(redo_record)
         self.config['sent_to_redo_queue'] += 1
 
@@ -2253,7 +2247,8 @@ class ExecuteWriteToSqsMixin():
         '''
 
         logging.debug(message_debug(919, threading.current_thread().name, redo_record))
-        assert type(redo_record) == str
+        assert isinstance(redo_record, str)
+
         response = self.sqs.send_message(
             QueueUrl=self.queue_url,
             DelaySeconds=10,
@@ -2287,66 +2282,28 @@ class OutputAzureQueueMixin():
 
     def __init__(self, *args, **kwargs):
         logging.debug(message_debug(996, threading.current_thread().name, "OutputInternalMixin"))
-        self.connection_string = config.get("azure_connection_string")
-        self.queue_name = config.get("azure_queue_name")
-        self.servicebus_client = ServiceBusClient.from_connection_string(self.connection_string)
-        self.sender = self.servicebus_client.get_queue_sender(queue_name=self.queue_name)
+        failure_connection_string = config.get("azure_failure_connection_string")
+        failure_queue_name = config.get("azure_failure_queue_name")
+        info_connection_string = config.get("azure_info_connection_string")
+        info_queue_name = config.get("azure_info_queue_name")
 
-        # Create sqs object.
-        # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/sqs.html
-        # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/core/session.html
-
-        regular_expression = "^([^/]+://[^/]+)/"
-        regex = re.compile(regular_expression)
-        match = regex.match(self.info_queue_url)
-        if not match:
-            exit_error(750, self.info_queue_url)
-        endpoint_url = match.group(1)
-        self.sqs = boto3.client("sqs", endpoint_url=endpoint_url)
+        failure_servicebus_client = ServiceBusClient.from_connection_string(failure_connection_string)
+        self.failure_sender = failure_servicebus_client.get_queue_sender(queue_name=failure_queue_name)
+        info_servicebus_client = ServiceBusClient.from_connection_string(info_connection_string)
+        self.failure_sender = info_servicebus_client.get_queue_sender(queue_name=info_queue_name)
 
     def send_to_failure_queue(self, message):
-        assert type(message) == str
-        response = self.sqs.send_message(
-            QueueUrl=self.failure_queue_url,
-            DelaySeconds=10,
-            MessageAttributes={},
-            MessageBody=(message),
-        )
+        assert isinstance(message, str)
+        service_bus_message = ServiceBusMessage(message)
+        self.failure_sender.send_messages(service_bus_message)
         self.config['sent_to_failure_queue'] += 1
 
     def send_to_info_queue(self, message):
-        assert type(message) == str
-        response = self.sqs.send_message(
-            QueueUrl=self.info_queue_url,
-            DelaySeconds=10,
-            MessageAttributes={},
-            MessageBody=(message),
-        )
+        assert isinstance(message, str)
+        service_bus_message = ServiceBusMessage(message)
+        self.finfo_sender.send_messages(service_bus_message)
         self.config['sent_to_info_queue'] += 1
 
-
-----------------
-
-
-class PrintAzureQueueMixin():
-
-    def __init__(self, config=None, *args, **kwargs):
-        logging.debug(message_debug(996, threading.current_thread().name, "PrintAzureQueueMixin"))
-
-        self.connection_string = config.get("azure_connection_string")
-        self.queue_name = config.get("azure_queue_name")
-        self.servicebus_client = ServiceBusClient.from_connection_string(self.connection_string)
-        self.sender = self.servicebus_client.get_queue_sender(queue_name=self.queue_name)
-
-    def print(self, message):
-        assert isinstance(message, str)
-
-        service_bus_message = ServiceBusMessage(message)
-        self.sender.send_messages(service_bus_message)
-
-    def close(self):
-        self.sender.close()
-        self.servicebus_client.close()
 
 # -----------------------------------------------------------------------------
 # Class: OutputInternalMixin
@@ -2360,13 +2317,13 @@ class OutputInternalMixin():
         logging.debug(message_debug(996, threading.current_thread().name, "OutputInternalMixin"))
 
     def send_to_failure_queue(self, message):
-        assert type(message) == str
         logging.info(message_info(121, threading.current_thread().name, message))
+        assert isinstance(message, str)
         self.config['sent_to_failure_queue'] += 1
 
     def send_to_info_queue(self, message):
-        assert type(message) == str
         logging.info(message_info(128, threading.current_thread().name, message))
+        assert isinstance(message, str)
         self.config['sent_to_info_queue'] += 1
 
 # -----------------------------------------------------------------------------
@@ -2404,9 +2361,9 @@ class OutputKafkaMixin():
             logging.warning(message_warning(408, threading.current_thread().name, message_topic, message_value, message_error, error))
 
     def send_to_failure_queue(self, message):
-        assert type(message) == str
+        logging.debug(message_debug(916, threading.current_thread().name, self.kafka_failure_topic, message))
+        assert isinstance(message, str)
         try:
-            logging.debug(message_debug(916, threading.current_thread().name, self.kafka_failure_topic, message))
             self.kafka_failure_producer.produce(self.kafka_failure_topic, message, on_delivery=self.on_kafka_delivery)
             self.config['sent_to_failure_queue'] += 1
         except BufferError as err:
@@ -2419,9 +2376,9 @@ class OutputKafkaMixin():
             logging.warning(message_warning(407, threading.current_thread().name, self.kafka_failure_topic, err, message))
 
     def send_to_info_queue(self, message):
+        logging.debug(message_debug(916, threading.current_thread().name, self.kafka_info_topic, message))
         assert type(message) == str
         try:
-            logging.debug(message_debug(916, threading.current_thread().name, self.kafka_info_topic, message))
             self.kafka_info_producer.produce(self.kafka_info_topic, message, on_delivery=self.on_kafka_delivery)
             self.config['sent_to_info_queue'] += 1
         except BufferError as err:
@@ -2472,12 +2429,12 @@ class OutputRabbitmqMixin():
         )
 
     def send_to_failure_queue(self, message):
-        assert type(message) == str
+        assert isinstance(message, str)
         self.output_rabbitmq_mixin_failure_rabbitmq.send(message)
         self.config['sent_to_failure_queue'] += 1
 
     def send_to_info_queue(self, message):
-        assert type(message) == str
+        assert isinstance(message, str)
         self.output_rabbitmq_mixin_info_rabbitmq.send(message)
         self.config['sent_to_info_queue'] += 1
 
@@ -2507,7 +2464,7 @@ class OutputSqsMixin():
         self.sqs = boto3.client("sqs", endpoint_url=endpoint_url)
 
     def send_to_failure_queue(self, message):
-        assert type(message) == str
+        assert isinstance(message, str)
         response = self.sqs.send_message(
             QueueUrl=self.failure_queue_url,
             DelaySeconds=10,
@@ -2517,7 +2474,7 @@ class OutputSqsMixin():
         self.config['sent_to_failure_queue'] += 1
 
     def send_to_info_queue(self, message):
-        assert type(message) == str
+        assert isinstance(message, str)
         response = self.sqs.send_message(
             QueueUrl=self.info_queue_url,
             DelaySeconds=10,
@@ -2575,7 +2532,7 @@ class ProcessRedoQueueThread(threading.Thread):
         self.redo_queue = redo_queue
 
     def filter_info_message(self, message=None):
-        assert type(message) == str
+        assert isinstance(message, str)
         return self.info_filter.filter(message=message)
 
     def govern(self):
@@ -2713,8 +2670,8 @@ class QueueRedoRecordsThread(threading.Thread):
             # Return generator value.
 
             logging.debug(message_debug(903, threading.current_thread().name, redo_record))
+            assert isinstance(redo_record, str)
             self.config['redo_records_from_senzing_engine'] += 1
-            assert type(redo_record) == str
             yield redo_record, None
 
     def run(self):
