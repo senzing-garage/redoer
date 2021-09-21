@@ -1741,7 +1741,7 @@ class MonitorThread(threading.Thread):
 
 
 # -----------------------------------------------------------------------------
-# Class: InputAzureMixin
+# Class: InputAzureQueueMixin
 # -----------------------------------------------------------------------------
 
 class InputAzureQueueMixin():
@@ -2009,8 +2009,10 @@ class InputSqsMixin():
 #   Classes:
 #   - ExecuteMixin - calls g2_engine.process(...)
 #   - ExecuteWithInfoMixin - g2_engine.processWithInfo(...)
+#   - ExecuteWriteToAzureQueueMixin - Sends redo record to Azure Queue
 #   - ExecuteWriteToRabbitmqMixin - Sends redo record to RabbitMQ
 #   - ExecuteWriteToKafkaMixin - Sends redo record to Kafka
+#   - ExecuteWriteTSqsMixin - Sends redo record to AWS SQS
 # =============================================================================
 
 # -----------------------------------------------------------------------------
