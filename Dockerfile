@@ -5,7 +5,7 @@ ENV REFRESHED_AT=2021-08-12
 
 LABEL Name="senzing/redoer" \
       Maintainer="support@senzing.com" \
-      Version="1.3.10"
+      Version="1.4.0"
 
 HEALTHCHECK CMD ["/app/healthcheck.sh"]
 

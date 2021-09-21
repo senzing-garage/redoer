@@ -10,17 +10,14 @@
 #        Senzing redo record.
 # -----------------------------------------------------------------------------
 
-from urllib.parse import urlparse, urlunparse
 import argparse
-import boto3
-import confluent_kafka
 import datetime
+import functools
 import json
 import linecache
 import logging
-import queue
 import os
-import pika
+import queue
 import re
 import signal
 import string
@@ -28,16 +25,19 @@ import subprocess
 import sys
 import threading
 import time
-import functools
-from azure.servicebus import ServiceBusClient, ServiceBusMessage
+from urllib.parse import urlparse, urlunparse
 
+import boto3
+import confluent_kafka
+import pika
+from azure.servicebus import ServiceBusClient, ServiceBusMessage
 
 # Import Senzing libraries.
 try:
+    import G2Exception
     from G2ConfigMgr import G2ConfigMgr
     from G2Engine import G2Engine
     from G2Product import G2Product
-    import G2Exception
 except ImportError:
     pass
 
