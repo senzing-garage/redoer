@@ -302,15 +302,15 @@ configuration_locator = {
         "env": "SENZING_RABBITMQ_PREFETCH_COUNT",
         "cli": "rabbitmq-prefetch-count",
     },
-    "rabbitmq_redo_exchange": {
-        "default": None,
-        "env": "SENZING_RABBITMQ_REDO_EXCHANGE",
-        "cli": "rabbitmq-redo-exchange",
-    },
     "rabbitmq_reconnect_delay_in_seconds": {
         "default": "60",
         "env": "SENZING_RABBITMQ_RECONNECT_DELAY_IN_SECONDS",
         "cli": "rabbitmq-reconnect-wait-time-in-seconds",
+    },
+    "rabbitmq_redo_exchange": {
+        "default": None,
+        "env": "SENZING_RABBITMQ_REDO_EXCHANGE",
+        "cli": "rabbitmq-redo-exchange",
     },
     "rabbitmq_redo_host": {
         "default": None,
@@ -362,15 +362,15 @@ configuration_locator = {
         "env": "SENZING_REDO_SLEEP_TIME_IN_SECONDS",
         "cli": "redo-sleep-time-in-seconds",
     },
-    "redo_retry_sleep_time_in_seconds": {
-        "default": 60,
-        "env": "SENZING_REDO_RETRY_SLEEP_TIME_IN_SECONDS",
-        "cli": "redo-retry-sleep-time-in-seconds",
-    },
     "redo_retry_limit": {
         "default": 5,
         "env": "SENZING_REDO_RETRY_LIMIT",
         "cli": "redo-retry-limit",
+    },
+    "redo_retry_sleep_time_in_seconds": {
+        "default": 60,
+        "env": "SENZING_REDO_RETRY_SLEEP_TIME_IN_SECONDS",
+        "cli": "redo-retry-sleep-time-in-seconds",
     },
     "resource_path": {
         "default": "/opt/senzing/g2/resources",
