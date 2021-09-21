@@ -29,6 +29,8 @@ import sys
 import threading
 import time
 import functools
+from azure.servicebus import ServiceBusClient, ServiceBusMessage
+
 
 # Import Senzing libraries.
 try:
@@ -1742,17 +1744,17 @@ class MonitorThread(threading.Thread):
 # Class: InputAzureMixin
 # -----------------------------------------------------------------------------
 
-class InputAzureMixin():
+class InputAzureQueueMixin():
 
     def __init__(self, *args, **kwargs):
-        logging.debug(message_debug(996, threading.current_thread().name, "InputAzureMixin"))
-        connection_string = config.get("azure_connection_string")
-        queue_name = config.get("azure_queue_name")
+        logging.debug(message_debug(996, threading.current_thread().name, "InputAzureQueueMixin"))
+        connection_string = self.config.get("azure_connection_string")
+        queue_name = self.config.get("azure_queue_name")
 
         # Create objects.
 
-        self.servicebus_client = ServiceBusClient.from_connection_string(connection_string)
-        self.receiver = self.servicebus_client.get_queue_receiver(queue_name=queue_name)
+        servicebus_client = ServiceBusClient.from_connection_string(connection_string)
+        self.receiver = servicebus_client.get_queue_receiver(queue_name=queue_name)
 
     def redo_records(self):
         '''
@@ -2125,6 +2127,37 @@ class ExecuteWithInfoMixin():
         return True
 
 # -----------------------------------------------------------------------------
+# Class: ExecuteWriteToAzureQueueMixin
+# -----------------------------------------------------------------------------
+
+class ExecuteWriteToAzureQueueMixin():
+
+    def __init__(self, *args, **kwargs):
+        logging.debug(message_debug(996, threading.current_thread().name, "ExecuteWriteToAzureQueueMixin"))
+        connection_string = self.config.get("azure_connection_string")
+        queue_name = self.config.get("azure_queue_name")
+
+        # Create objects.
+
+        servicebus_client = ServiceBusClient.from_connection_string(connection_string)
+        self.sender = servicebus_client.get_queue_sender(queue_name=queue_name)
+
+    def process_redo_record(self, redo_record=None):
+        '''
+        Process a single Senzing redo record.
+        Simply send to AWS SQS.
+        '''
+
+        logging.debug(message_debug(919, threading.current_thread().name, redo_record))
+        assert isinstance(redo_record, str)
+
+        service_bus_message = ServiceBusMessage(redo_record)
+        self.sender.send_messages(service_bus_message)
+        self.config['sent_to_redo_queue'] += 1
+
+        return True
+
+# -----------------------------------------------------------------------------
 # Class: ExecuteWriteToKafkaMixin
 # -----------------------------------------------------------------------------
 
@@ -2281,11 +2314,13 @@ class OutputAzureQueueMixin():
     ''' This is a "null object". '''
 
     def __init__(self, *args, **kwargs):
-        logging.debug(message_debug(996, threading.current_thread().name, "OutputInternalMixin"))
-        failure_connection_string = config.get("azure_failure_connection_string")
-        failure_queue_name = config.get("azure_failure_queue_name")
-        info_connection_string = config.get("azure_info_connection_string")
-        info_queue_name = config.get("azure_info_queue_name")
+        logging.debug(message_debug(996, threading.current_thread().name, "OutputAzureQueueMixin"))
+        failure_connection_string = self.config.get("azure_failure_connection_string")
+        failure_queue_name = self.config.get("azure_failure_queue_name")
+        info_connection_string = self.config.get("azure_info_connection_string")
+        info_queue_name = self.config.get("azure_info_queue_name")
+
+        # Create objects.
 
         failure_servicebus_client = ServiceBusClient.from_connection_string(failure_connection_string)
         self.failure_sender = failure_servicebus_client.get_queue_sender(queue_name=failure_queue_name)
@@ -2727,8 +2762,7 @@ class QueueRedoRecordsInternalThread(QueueRedoRecordsThread, QueueInternalMixin)
 class ProcessReadFromAzureQueueThread(ProcessRedoQueueThread, InputAzureQueueMixin, ExecuteMixin, OutputInternalMixin):
 
     def __init__(self, *args, **kwargs):
-        logging.debug(message_debug(
-            997, threading.current_thread().name, "ProcessReadFromAzureQueueThread"))
+        logging.debug(message_debug(997, threading.current_thread().name, "ProcessReadFromAzureQueueThread"))
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
@@ -2736,8 +2770,7 @@ class ProcessReadFromAzureQueueThread(ProcessRedoQueueThread, InputAzureQueueMix
 class ProcessReadFromAzureQueueWithinfoThread(ProcessRedoQueueThread, InputAzureQueueMixin, ExecuteWithInfoMixin, OutputAzureQueueMixin):
 
     def __init__(self, *args, **kwargs):
-        logging.debug(message_debug(997, threading.current_thread(
-        ).name, "ProcessReadFromAzureQueueWithinfoThread"))
+        logging.debug(message_debug(997, threading.current_thread().name, "ProcessReadFromAzureQueueWithinfoThread"))
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
@@ -2745,8 +2778,7 @@ class ProcessReadFromAzureQueueWithinfoThread(ProcessRedoQueueThread, InputAzure
 class ProcessRedoWithinfoAzureQueueThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWithInfoMixin, OutputAzureQueueMixin):
 
     def __init__(self, *args, **kwargs):
-        logging.debug(message_debug(997, threading.current_thread(
-        ).name, "ProcessRedoWithinfoAzureQueueThread"))
+        logging.debug(message_debug(997, threading.current_thread().name, "ProcessRedoWithinfoAzureQueueThread"))
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
@@ -2754,13 +2786,11 @@ class ProcessRedoWithinfoAzureQueueThread(ProcessRedoQueueThread, InputInternalM
 class QueueRedoRecordsAzureQueueThread(ProcessRedoQueueThread, InputInternalMixin, ExecuteWriteToAzureQueueMixin):
 
     def __init__(self, *args, **kwargs):
-        logging.debug(message_debug(
-            997, threading.current_thread().name, "QueueRedoRecordsAzureQueueThread"))
+        logging.debug(message_debug(997, threading.current_thread().name, "QueueRedoRecordsAzureQueueThread"))
         for base in type(self).__bases__:
             base.__init__(self, *args, **kwargs)
 
 # ---- Kafka related ----------------------------------------------------------
-
 
 class ProcessReadFromKafkaThread(ProcessRedoQueueThread, InputKafkaMixin, ExecuteMixin, OutputInternalMixin):
 
@@ -3199,11 +3229,8 @@ def do_read_from_azure_queue(args):
     "withinfo" is not returned.
     '''
 
-    options_to_defaults_map = {}
-
     redo_processor(
         args=args,
-        options_to_defaults_map=options_to_defaults_map,
         process_thread=ProcessReadFromAzureQueueThread,
         monitor_thread=MonitorThread
     )
@@ -3255,11 +3282,8 @@ def do_read_from_sqs(args):
     "withinfo" is not returned.
     '''
 
-    options_to_defaults_map = {}
-
     redo_processor(
         args=args,
-        options_to_defaults_map=options_to_defaults_map,
         process_thread=ProcessReadFromSqsThread,
         monitor_thread=MonitorThread
     )
@@ -3271,11 +3295,8 @@ def do_read_from_azure_queue_withinfo(args):
     "withinfo" returned is sent to Azure queue.
     '''
 
-    options_to_defaults_map = {}
-
     redo_processor(
         args=args,
-        options_to_defaults_map=options_to_defaults_map,
         process_thread=ProcessReadFromAzureQueueWithinfoThread,
         monitor_thread=MonitorThread
     )
@@ -3339,11 +3360,8 @@ def do_read_from_sqs_withinfo(args):
     "withinfo" returned is sent to AWS SQS.
     '''
 
-    options_to_defaults_map = {}
-
     redo_processor(
         args=args,
-        options_to_defaults_map=options_to_defaults_map,
         process_thread=ProcessReadFromSqsWithinfoThread,
         monitor_thread=MonitorThread
     )
@@ -3369,11 +3387,8 @@ def do_redo_withinfo_azure_queue(args):
     No external queues are used.  "withinfo" returned is sent to Azure queue.
     '''
 
-    options_to_defaults_map = {}
-
     redo_processor(
         args=args,
-        options_to_defaults_map=options_to_defaults_map,
         read_thread=QueueRedoRecordsInternalThread,
         process_thread=ProcessRedoWithinfoAzureQueueThread,
         monitor_thread=MonitorThread
@@ -3434,11 +3449,8 @@ def do_redo_withinfo_sqs(args):
     No external queues are used.  "withinfo" returned is sent to RabbitMQ.
     '''
 
-    options_to_defaults_map = {}
-
     redo_processor(
         args=args,
-        options_to_defaults_map=options_to_defaults_map,
         read_thread=QueueRedoRecordsInternalThread,
         process_thread=ProcessRedoWithinfoSqsThread,
         monitor_thread=MonitorThread
@@ -3483,11 +3495,8 @@ def do_write_to_azure_queue(args):
     No g2_engine processing is done.
     '''
 
-    options_to_defaults_map = {}
-
     redo_processor(
         args=args,
-        options_to_defaults_map=options_to_defaults_map,
         read_thread=QueueRedoRecordsInternalThread,
         process_thread=QueueRedoRecordsAzureQueueThread,
         monitor_thread=MonitorThread
@@ -3542,11 +3551,8 @@ def do_write_to_sqs(args):
     No g2_engine processing is done.
     '''
 
-    options_to_defaults_map = {}
-
     redo_processor(
         args=args,
-        options_to_defaults_map=options_to_defaults_map,
         read_thread=QueueRedoRecordsInternalThread,
         process_thread=QueueRedoRecordsSqsThread,
         monitor_thread=MonitorThread
