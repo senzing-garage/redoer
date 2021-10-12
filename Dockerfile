@@ -7,6 +7,8 @@ LABEL Name="senzing/redoer" \
       Maintainer="support@senzing.com" \
       Version="1.4.1"
 
+# Define health check
+
 HEALTHCHECK CMD ["/app/healthcheck.sh"]
 
 # Run as "root" for system installation.
