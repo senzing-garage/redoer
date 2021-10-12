@@ -1,11 +1,11 @@
-ARG BASE_IMAGE=senzing/senzing-base:1.6.1
+ARG BASE_IMAGE=senzing/senzing-base:1.6.2
 FROM ${BASE_IMAGE}
 
-ENV REFRESHED_AT=2021-08-12
+ENV REFRESHED_AT=2021-10-11
 
 LABEL Name="senzing/redoer-with-data" \
       Maintainer="support@senzing.com" \
-      Version="1.4.0"
+      Version="1.4.1"
 
 # SENZING_ACCEPT_EULA to be replaced by --build-arg
 
@@ -22,10 +22,10 @@ USER root
  # Install Senzing repository index.
 
 RUN curl \
-        --output /senzingrepo_1.0.0-1_amd64.deb \
-        https://senzing-production-apt.s3.amazonaws.com/senzingrepo_1.0.0-1_amd64.deb \
+      --output /senzingrepo_1.0.0-1_amd64.deb \
+      https://senzing-production-apt.s3.amazonaws.com/senzingrepo_1.0.0-1_amd64.deb \
  && apt -y install \
-        /senzingrepo_1.0.0-1_amd64.deb \
+      /senzingrepo_1.0.0-1_amd64.deb \
  && apt update \
  && rm /senzingrepo_1.0.0-1_amd64.deb
 
@@ -47,9 +47,9 @@ RUN apt-get update \
 
 COPY requirements.txt ./
 RUN pip3 install --upgrade pip \
- && pip3 install -r requirements.txt
+ && pip3 install -r requirements.txt \
  && rm /requirements.txt
- 
+
 # Copy files from repository.
 
 COPY ./rootfs /
