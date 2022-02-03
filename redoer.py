@@ -3035,7 +3035,7 @@ def get_g2_product(config, g2_product_name="loader-G2-product"):
     '''Get the G2Product resource.'''
     try:
         g2_configuration_json = get_g2_configuration_json(config)
-        result = G2Product()
+        result = G2Product.G2Product()
         result.initV2(g2_product_name, g2_configuration_json, config.get('debug'))
     except G2Exception.G2ModuleException as err:
         exit_error(892, config.get('g2project_ini'), err)
