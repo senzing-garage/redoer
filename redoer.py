@@ -39,10 +39,7 @@ from azure.servicebus import ServiceBusClient, ServiceBusMessage
 # Import from Senzing
 
 try:
-    import G2Exception
-    from G2ConfigMgr import G2ConfigMgr
-    from G2Engine import G2Engine
-    from G2Product import G2Product
+    from senzing import G2Exception, G2ConfigMgr, G2Engine, G2Product
 except ImportError:
     pass
 
@@ -51,7 +48,7 @@ except ImportError:
 __all__ = []
 __version__ = "1.4.0"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2021-09-21'
+__updated__ = '2022-02-03'
 
 SENZING_PRODUCT_ID = "5010"  # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 log_format = '%(asctime)s %(message)s'
@@ -3015,7 +3012,7 @@ def get_g2_configuration_manager(config, g2_configuration_manager_name="loader-G
     '''Get the G2Config resource.'''
     try:
         g2_configuration_json = get_g2_configuration_json(config)
-        result = G2ConfigMgr()
+        result = G2ConfigMgr.G2ConfigMgr()
         result.initV2(g2_configuration_manager_name, g2_configuration_json, config.get('debug', False))
     except G2Exception.G2ModuleException as err:
         exit_error(896, g2_configuration_json, err)
@@ -3026,7 +3023,7 @@ def get_g2_engine(config, g2_engine_name="loader-G2-engine"):
     '''Get the G2Engine resource.'''
     try:
         g2_configuration_json = get_g2_configuration_json(config)
-        result = G2Engine()
+        result = G2Engine.G2Engine()
         result.initV2(g2_engine_name, g2_configuration_json, config.get('debug', False))
         config['last_configuration_check'] = time.time()
     except G2Exception.G2ModuleException as err:
