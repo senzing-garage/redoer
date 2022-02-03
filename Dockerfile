@@ -19,7 +19,8 @@ USER root
 
 RUN apt-get update \
  && apt-get -y install \
-    librdkafka-dev \
+      libaio1 \
+      librdkafka-dev \
  && rm -rf /var/lib/apt/lists/*
 
 # Install packages via PIP.

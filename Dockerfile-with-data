@@ -36,6 +36,7 @@ RUN apt-get update \
       apt-transport-https \
       curl \
       gnupg \
+      libaio1 \
       librdkafka-dev \
       senzingdata-v2 \
       sudo \
