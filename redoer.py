@@ -13,12 +13,14 @@
 # Import from standard library. https://docs.python.org/3/library/
 
 import argparse
+import confluent_kafka
 import datetime
 import functools
 import json
 import linecache
 import logging
 import os
+import pika
 import queue
 import re
 import signal
@@ -31,10 +33,8 @@ from urllib.parse import urlparse, urlunparse
 
 # Import from https://pypi.org/
 
-import boto3
-import confluent_kafka
-import pika
 from azure.servicebus import ServiceBusClient, ServiceBusMessage
+import boto3
 
 # Import from Senzing
 
