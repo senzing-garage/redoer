@@ -57,7 +57,6 @@ except:
     except:
         senzing_version_major = 0
 
-
 # Metadata
 
 __all__ = []
@@ -1181,6 +1180,7 @@ def get_configuration(args):
 
     result['program_version'] = __version__
     result['program_updated'] = __updated__
+    result['senzing_version_major'] = senzing_version_major
 
     # Add "run_as" information.
 
@@ -1758,10 +1758,10 @@ class MonitorThread(threading.Thread):
 #   - InputSqsMixin - Gets redo records from AWS SQS
 # =============================================================================
 
-
 # -----------------------------------------------------------------------------
 # Class: InputAzureQueueMixin
 # -----------------------------------------------------------------------------
+
 
 class InputAzureQueueMixin():
 
@@ -2360,7 +2360,6 @@ class OutputAzureQueueMixin():
         service_bus_message = ServiceBusMessage(message)
         self.finfo_sender.send_messages(service_bus_message)
         self.config['sent_to_info_queue'] += 1
-
 
 # -----------------------------------------------------------------------------
 # Class: OutputInternalMixin
