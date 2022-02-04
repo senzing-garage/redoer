@@ -963,6 +963,8 @@ message_dictionary = {
     "920": "gdb STDOUT: {0}",
     "921": "gdb STDERR: {0}",
     "922": "Thread: {0} Marker: {1} Redo record: {2}",
+    "950": "Enter function: {0}",
+    "951": "Exit  function: {0}",
     "995": "Thread: {0} Using Class: {1}",
     "996": "Thread: {0} Using Mixin: {1}",
     "997": "Thread: {0} Using Thread: {1}",
@@ -2586,6 +2588,7 @@ class ProcessRedoQueueThread(threading.Thread):
         self.governor = governor
         self.info_filter = InfoFilter(g2_engine=g2_engine)
         self.redo_queue = redo_queue
+        self.senzing_version_major = config.get('senzing_version_major')
 
     def filter_info_message(self, message=None):
         assert isinstance(message, str)
@@ -2624,7 +2627,10 @@ class ProcessRedoQueueThread(threading.Thread):
         # Apply new configuration to g2_engine.
 
         logging.debug(message_debug(908, threading.current_thread().name, default_config_id))
-        self.g2_engine.reinitV2(default_config_id)
+        if self.senzing_version_major <= 2:
+            self.g2_engine.reinitV2(default_config_id)
+        else:
+            self.g2_engine.reinit(default_config_id)
 
     def run(self):
         ''' Process Senzing redo records. '''
@@ -3024,44 +3030,60 @@ def get_g2_configuration_json(config):
 
 def get_g2_configuration_manager(config, g2_configuration_manager_name="loader-G2-configuration-manager"):
     '''Get the G2Config resource.'''
+    logging.debug(message_debug(950, sys._getframe().f_code.co_name))
     try:
         g2_configuration_json = get_g2_configuration_json(config)
         result = G2ConfigMgr.G2ConfigMgr()
-        if senzing_version_major <= 2:
-            result.initV2(g2_configuration_manager_name, g2_configuration_json, config.get('debug', False))
+        if config.get("senzing_version_major") <= 2:
+            result.initV2(g2_configuration_manager_name, g2_configuration_json, config.get('debug'))
         else:
-            result.init(g2_configuration_manager_name, g2_configuration_json, config.get('debug', False))
+            result.init(g2_configuration_manager_name, g2_configuration_json, config.get('debug'))
     except G2Exception.G2ModuleException as err:
         exit_error(896, g2_configuration_json, err)
+    logging.debug(message_debug(951, sys._getframe().f_code.co_name))
     return result
 
 
 def get_g2_engine(config, g2_engine_name="loader-G2-engine"):
     '''Get the G2Engine resource.'''
+    logging.debug(message_debug(950, sys._getframe().f_code.co_name))
     try:
         g2_configuration_json = get_g2_configuration_json(config)
         result = G2Engine.G2Engine()
-        if senzing_version_major <= 2:
-            result.initV2(g2_engine_name, g2_configuration_json, config.get('debug', False))
+        logging.debug(message_debug(950, "g2_engine.init()"))
+        if config.get("senzing_version_major") <= 2:
+            result.initV2(g2_engine_name, g2_configuration_json, config.get('debug'))
         else:
-            result.init(g2_engine_name, g2_configuration_json, config.get('debug', False))
+            result.init(g2_engine_name, g2_configuration_json, config.get('debug'))
+        logging.debug(message_debug(951, "g2_engine.init()"))
         config['last_configuration_check'] = time.time()
     except G2Exception.G2ModuleException as err:
         exit_error(898, g2_configuration_json, err)
+
+    if config.get('prime_engine'):
+        try:
+            logging.debug(message_debug(950, "g2_engine.primeEngine()"))
+            result.primeEngine()
+            logging.debug(message_debug(951, "g2_engine.primeEngine()"))
+        except G2Exception.G2ModuleGenericException as err:
+            exit_error(881, g2_configuration_json, err)
+    logging.debug(message_debug(951, sys._getframe().f_code.co_name))
     return result
 
 
 def get_g2_product(config, g2_product_name="loader-G2-product"):
     '''Get the G2Product resource.'''
+    logging.debug(message_debug(950, sys._getframe().f_code.co_name))
     try:
         g2_configuration_json = get_g2_configuration_json(config)
         result = G2Product.G2Product()
-        if senzing_version_major <= 2:
+        if config.get("senzing_version_major") <= 2:
             result.initV2(g2_product_name, g2_configuration_json, config.get('debug'))
         else:
             result.init(g2_product_name, g2_configuration_json, config.get('debug'))
     except G2Exception.G2ModuleException as err:
         exit_error(892, config.get('g2project_ini'), err)
+    logging.debug(message_debug(951, sys._getframe().f_code.co_name))
     return result
 
 # -----------------------------------------------------------------------------
