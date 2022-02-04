@@ -1,11 +1,11 @@
 ARG BASE_IMAGE=senzing/senzing-base:1.6.4
 FROM ${BASE_IMAGE}
 
-ENV REFRESHED_AT=2022-01-06
+ENV REFRESHED_AT=2022-02-04
 
 LABEL Name="senzing/redoer" \
       Maintainer="support@senzing.com" \
-      Version="1.4.1"
+      Version="1.4.2"
 
 # Define health check
 
@@ -19,7 +19,8 @@ USER root
 
 RUN apt-get update \
  && apt-get -y install \
-    librdkafka-dev \
+      libaio1 \
+      librdkafka-dev \
  && rm -rf /var/lib/apt/lists/*
 
 # Install packages via PIP.
