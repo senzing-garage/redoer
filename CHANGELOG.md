@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed in 1.4.3
 
  - Update to use Debian 11.2
+ - restructured to use multistage build.
+ - added docker-build-with-data target to makefile
 
 ## [1.4.2] - 2022-02-04
 
