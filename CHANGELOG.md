@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 [markdownlint](https://dlaa.me/markdownlint/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.4] - 2022-02-09
+
+### Changed in 1.4.4
+
+ - Updated base image sha in -with-data dockerfile
+
 ## [1.4.3] - 2022-02-07
 
 ### Changed in 1.4.3
