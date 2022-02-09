@@ -7,6 +7,7 @@ GIT_VERSION := $(shell git describe --always --tags --long --dirty | sed -e 's/\
 
 DOCKER_IMAGE_TAG ?= $(GIT_REPOSITORY_NAME):$(GIT_VERSION)
 DOCKER_IMAGE_NAME := senzing/redoer
+SENZING_ACCEPT_EULA ?= no
 
 # -----------------------------------------------------------------------------
 # The first "make" target runs as default.
@@ -26,6 +27,16 @@ docker-build:
 		--tag $(DOCKER_IMAGE_NAME):$(GIT_VERSION) \
 		.
 
+.PHONY: docker-build-with-data
+docker-build-with-data:
+	docker build \
+		--build-arg SENZING_ACCEPT_EULA=$(SENZING_ACCEPT_EULA) \
+		--file Dockerfile-with-data \
+		--tag $(DOCKER_IMAGE_NAME)-with-data \
+		--tag $(DOCKER_IMAGE_NAME)-with-data:$(GIT_VERSION) \
+		.
+
+
 # -----------------------------------------------------------------------------
 # Clean up targets
 # -----------------------------------------------------------------------------
@@ -36,8 +47,14 @@ docker-rmi-for-build:
 		$(DOCKER_IMAGE_NAME):$(GIT_VERSION) \
 		$(DOCKER_IMAGE_NAME)
 
+.PHONY: docker-rmi-for-build-with-data
+docker-rmi-for-build-with-data:
+	-docker rmi --force \
+		$(DOCKER_IMAGE_NAME)-with-data:$(GIT_VERSION) \
+		$(DOCKER_IMAGE_NAME)-with-data
+
 .PHONY: clean
-clean: docker-rmi-for-build
+clean: docker-rmi-for-build docker-rmi-for-build-with-data
 
 # -----------------------------------------------------------------------------
 # Help
