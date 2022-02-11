@@ -931,6 +931,7 @@ message_dictionary = {
     "722": "Thread: {0} Kafka commit failed for {1}",
     "723": "Detected inactive thread. Total threads: {0}  Active threads: {1}",
     "730": "There are not enough safe characters to do the translation. Unsafe Characters: {0}; Safe Characters: {1}",
+    "879": "Senzing SDK was not imported.",
     "880": "Unspecific error when {1}. Error: {0}",
     "885": "License has expired.",
     "886": "G2Engine.addRecord() bad return code: {0}; JSON: {1}",
@@ -3656,6 +3657,11 @@ if __name__ == "__main__":
         logging.info(message_info(180, senzing_governor.__file__))
     except ImportError:
         pass
+
+    # Warn that Senzing was not imported.
+
+    if not senzing_sdk_version_major:
+        logging.warning(message_warning(879))
 
     # Parse the command line arguments.
 
