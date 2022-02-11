@@ -36,14 +36,16 @@ import boto3
 import confluent_kafka
 import pika
 
-# Determine "Major" version of Senzing.
+# Determine "Major" version of Senzing SDK.
 
-senzing_version_major = 3
+senzing_sdk_version_major = None
 
 # Import from Senzing.
 
 try:
     from senzing import G2ConfigMgr, G2Engine, G2Exception, G2Product
+    senzing_sdk_version_major = 3
+
 except:
 
     # Fall back to pre-Senzing-Python-SDK style of imports.
@@ -53,16 +55,16 @@ except:
         import G2Engine
         import G2Exception
         import G2Product
-        senzing_version_major = 2
+        senzing_sdk_version_major = 2
     except:
-        senzing_version_major = 0
+        senzing_sdk_version_major = None
 
 # Metadata
 
 __all__ = []
-__version__ = "1.4.2"  # See https://www.python.org/dev/peps/pep-0396/
+__version__ = "1.4.5"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2022-02-04'
+__updated__ = '2022-02-11'
 
 SENZING_PRODUCT_ID = "5010"  # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 log_format = '%(asctime)s %(message)s'
@@ -1182,7 +1184,7 @@ def get_configuration(args):
 
     result['program_version'] = __version__
     result['program_updated'] = __updated__
-    result['senzing_version_major'] = senzing_version_major
+    result['senzing_sdk_version_major'] = senzing_sdk_version_major
 
     # Add "run_as" information.
 
@@ -2588,7 +2590,7 @@ class ProcessRedoQueueThread(threading.Thread):
         self.governor = governor
         self.info_filter = InfoFilter(g2_engine=g2_engine)
         self.redo_queue = redo_queue
-        self.senzing_version_major = config.get('senzing_version_major')
+        self.senzing_sdk_version_major = config.get('senzing_sdk_version_major')
 
     def filter_info_message(self, message=None):
         assert isinstance(message, str)
@@ -2627,7 +2629,7 @@ class ProcessRedoQueueThread(threading.Thread):
         # Apply new configuration to g2_engine.
 
         logging.debug(message_debug(908, threading.current_thread().name, default_config_id))
-        if self.senzing_version_major <= 2:
+        if self.senzing_sdk_version_major == 2:
             self.g2_engine.reinitV2(default_config_id)
         else:
             self.g2_engine.reinit(default_config_id)
@@ -3034,7 +3036,7 @@ def get_g2_configuration_manager(config, g2_configuration_manager_name="loader-G
     try:
         g2_configuration_json = get_g2_configuration_json(config)
         result = G2ConfigMgr.G2ConfigMgr()
-        if config.get("senzing_version_major") <= 2:
+        if config.get("senzing_sdk_version_major") == 2:
             result.initV2(g2_configuration_manager_name, g2_configuration_json, config.get('debug'))
         else:
             result.init(g2_configuration_manager_name, g2_configuration_json, config.get('debug'))
@@ -3051,7 +3053,7 @@ def get_g2_engine(config, g2_engine_name="loader-G2-engine"):
         g2_configuration_json = get_g2_configuration_json(config)
         result = G2Engine.G2Engine()
         logging.debug(message_debug(950, "g2_engine.init()"))
-        if config.get("senzing_version_major") <= 2:
+        if config.get("senzing_sdk_version_major") == 2:
             result.initV2(g2_engine_name, g2_configuration_json, config.get('debug'))
         else:
             result.init(g2_engine_name, g2_configuration_json, config.get('debug'))
@@ -3077,7 +3079,7 @@ def get_g2_product(config, g2_product_name="loader-G2-product"):
     try:
         g2_configuration_json = get_g2_configuration_json(config)
         result = G2Product.G2Product()
-        if config.get("senzing_version_major") <= 2:
+        if config.get("senzing_sdk_version_major") == 2:
             result.initV2(g2_product_name, g2_configuration_json, config.get('debug'))
         else:
             result.init(g2_product_name, g2_configuration_json, config.get('debug'))
