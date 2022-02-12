@@ -5,7 +5,7 @@ ENV REFRESHED_AT=2022-02-09
 
 LABEL Name="senzing/redoer" \
       Maintainer="support@senzing.com" \
-      Version="1.4.4"
+      Version="1.4.5"
 
 # -----------------------------------------------------------------------------
 # Stage: builder
@@ -46,7 +46,7 @@ ENV REFRESHED_AT=2022-02-09
 
 LABEL Name="senzing/redoer" \
       Maintainer="support@senzing.com" \
-      Version="1.4.4"
+      Version="1.4.5"
 
 # Define health check
 
