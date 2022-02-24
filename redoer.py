@@ -43,7 +43,7 @@ senzing_sdk_version_major = None
 # Import from Senzing.
 
 try:
-    from senzing import G2ConfigMgr, G2Engine, G2Exception, G2Product
+    from senzing import G2ConfigMgr, G2Engine, G2ModuleException, G2ModuleGenericException, G2ModuleNotInitialized, G2Product
     senzing_sdk_version_major = 3
 
 except:
@@ -64,7 +64,7 @@ except:
 __all__ = []
 __version__ = "1.4.5"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2022-02-11'
+__updated__ = '2022-02-24'
 
 SENZING_PRODUCT_ID = "5010"  # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 log_format = '%(asctime)s %(message)s'
@@ -2068,7 +2068,7 @@ class ExecuteMixin():
 
             self.config['processed_redo_records'] += 1
 
-        except G2Exception.G2ModuleNotInitialized as err:
+        except G2ModuleNotInitialized as err:
             exit_error(707, threading.current_thread().name, err, redo_record)
         except Exception as err:
             # OT-TODO: replace this error handling in the future when G2 throws dedicated
@@ -2120,7 +2120,7 @@ class ExecuteWithInfoMixin():
 
             self.config['processed_redo_records'] += 1
 
-        except G2Exception.G2ModuleNotInitialized as err:
+        except G2ModuleNotInitialized as err:
             self.send_to_failure_queue(redo_record)
             exit_error(707, threading.current_thread().name, err, info_bytearray.decode())
         except Exception as err:
@@ -2707,7 +2707,7 @@ class QueueRedoRecordsThread(threading.Thread):
             try:
                 logging.debug(message_debug(901, threading.current_thread().name))
                 return_code = self.g2_engine.getRedoRecord(redo_record_bytearray)
-            except G2Exception.G2ModuleNotInitialized as err:
+            except G2ModuleNotInitialized as err:
                 exit_error(702, err, redo_record_bytearray.decode())
             except Exception as err:
                 # OT-TODO: replace this error handling in the future when G2 throws dedicated
@@ -3036,12 +3036,12 @@ def get_g2_configuration_manager(config, g2_configuration_manager_name="loader-G
     logging.debug(message_debug(950, sys._getframe().f_code.co_name))
     try:
         g2_configuration_json = get_g2_configuration_json(config)
-        result = G2ConfigMgr.G2ConfigMgr()
+        result = G2ConfigMgr()
         if config.get("senzing_sdk_version_major") == 2:
             result.initV2(g2_configuration_manager_name, g2_configuration_json, config.get('debug'))
         else:
             result.init(g2_configuration_manager_name, g2_configuration_json, config.get('debug'))
-    except G2Exception.G2ModuleException as err:
+    except G2ModuleException as err:
         exit_error(896, g2_configuration_json, err)
     logging.debug(message_debug(951, sys._getframe().f_code.co_name))
     return result
@@ -3052,7 +3052,7 @@ def get_g2_engine(config, g2_engine_name="loader-G2-engine"):
     logging.debug(message_debug(950, sys._getframe().f_code.co_name))
     try:
         g2_configuration_json = get_g2_configuration_json(config)
-        result = G2Engine.G2Engine()
+        result = G2Engine()
         logging.debug(message_debug(950, "g2_engine.init()"))
         if config.get("senzing_sdk_version_major") == 2:
             result.initV2(g2_engine_name, g2_configuration_json, config.get('debug'))
@@ -3060,7 +3060,7 @@ def get_g2_engine(config, g2_engine_name="loader-G2-engine"):
             result.init(g2_engine_name, g2_configuration_json, config.get('debug'))
         logging.debug(message_debug(951, "g2_engine.init()"))
         config['last_configuration_check'] = time.time()
-    except G2Exception.G2ModuleException as err:
+    except G2ModuleException as err:
         exit_error(898, g2_configuration_json, err)
 
     if config.get('prime_engine'):
@@ -3068,7 +3068,7 @@ def get_g2_engine(config, g2_engine_name="loader-G2-engine"):
             logging.debug(message_debug(950, "g2_engine.primeEngine()"))
             result.primeEngine()
             logging.debug(message_debug(951, "g2_engine.primeEngine()"))
-        except G2Exception.G2ModuleGenericException as err:
+        except G2ModuleGenericException as err:
             exit_error(881, g2_configuration_json, err)
     logging.debug(message_debug(951, sys._getframe().f_code.co_name))
     return result
@@ -3079,12 +3079,12 @@ def get_g2_product(config, g2_product_name="loader-G2-product"):
     logging.debug(message_debug(950, sys._getframe().f_code.co_name))
     try:
         g2_configuration_json = get_g2_configuration_json(config)
-        result = G2Product.G2Product()
+        result = G2Product()
         if config.get("senzing_sdk_version_major") == 2:
             result.initV2(g2_product_name, g2_configuration_json, config.get('debug'))
         else:
             result.init(g2_product_name, g2_configuration_json, config.get('debug'))
-    except G2Exception.G2ModuleException as err:
+    except G2ModuleException as err:
         exit_error(892, config.get('g2project_ini'), err)
     logging.debug(message_debug(951, sys._getframe().f_code.co_name))
     return result
