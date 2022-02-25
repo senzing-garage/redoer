@@ -51,10 +51,10 @@ except:
     # Fall back to pre-Senzing-Python-SDK style of imports.
 
     try:
-        import G2ConfigMgr
-        import G2Engine
-        import G2Exception
-        import G2Product
+        from G2ConfigMgr import G2ConfigMgr
+        from G2Engine import G2Engine
+        from G2Exception import G2ModuleException, G2ModuleGenericException, G2ModuleNotInitialized
+        from G2Product import G2Product
         senzing_sdk_version_major = 2
     except:
         senzing_sdk_version_major = None
@@ -62,9 +62,9 @@ except:
 # Metadata
 
 __all__ = []
-__version__ = "1.4.5"  # See https://www.python.org/dev/peps/pep-0396/
+__version__ = "1.4.6"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2022-02-24'
+__updated__ = '2022-02-25'
 
 SENZING_PRODUCT_ID = "5010"  # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 log_format = '%(asctime)s %(message)s'
@@ -887,6 +887,8 @@ message_dictionary = {
     "181": "Monitoring halted. No active workers.",
     "190": "AWS SQS Long-polling: No messages from {0}",
     "203": "          WARNING: License will expire soon. Only {0} days left.",
+    "280": "Python SDK import level {0}",
+    "281": "Senzing Engine version: {0}",
     "292": "Configuration change detected.  Old: {0} New: {1}",
     "293": "For information on warnings and errors, see https://github.com/Senzing/stream-loader#errors",
     "294": "Version: {0}  Updated: {1}",
@@ -3662,6 +3664,8 @@ if __name__ == "__main__":
 
     if not senzing_sdk_version_major:
         logging.warning(message_warning(879))
+    else:
+        logging.info(message_info(280, senzing_sdk_version_major))
 
     # Parse the command line arguments.
 
