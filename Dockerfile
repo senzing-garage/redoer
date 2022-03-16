@@ -1,15 +1,16 @@
 ARG BASE_IMAGE=debian:11.2-slim@sha256:4c25ffa6ef572cf0d57da8c634769a08ae94529f7de5be5587ec8ce7b9b50f9c
-FROM ${BASE_IMAGE} as builder
-
-ENV REFRESHED_AT=2022-02-25
-
-LABEL Name="senzing/redoer" \
-      Maintainer="support@senzing.com" \
-      Version="1.4.6"
 
 # -----------------------------------------------------------------------------
 # Stage: builder
 # -----------------------------------------------------------------------------
+
+FROM ${BASE_IMAGE} AS builder
+
+ENV REFRESHED_AT=2022-03-17
+
+LABEL Name="senzing/redoer" \
+      Maintainer="support@senzing.com" \
+      Version="1.4.7"
 
 # Run as "root" for system installation.
 
@@ -17,10 +18,10 @@ USER root
 
 RUN apt-get update \
  && apt-get -y install \
-    python3 \
-    python3-dev \
-    python3-venv \
-    python3-pip \
+      python3 \
+      python3-dev \
+      python3-venv \
+      python3-pip \
  && apt-get clean \
  && rm -rf /var/lib/apt/lists/*
 
@@ -40,13 +41,15 @@ RUN pip3 install --upgrade pip \
 # Stage: Final
 # -----------------------------------------------------------------------------
 
+# Create the runtime image
+
 FROM ${BASE_IMAGE} AS runner
 
-ENV REFRESHED_AT=2022-02-25
+ENV REFRESHED_AT=2022-03-17
 
 LABEL Name="senzing/redoer" \
       Maintainer="support@senzing.com" \
-      Version="1.4.6"
+      Version="1.4.7"
 
 # Define health check
 
@@ -62,10 +65,11 @@ RUN apt-get update \
  && apt-get -y install \
       libaio1 \
       librdkafka-dev \
-       libxml2 \
+      libssl1.1 \
+      libxml2 \
+      postgresql-client \
       python3 \
       python3-venv \
-      postgresql-client \
       unixodbc \
  && apt-get clean \
  && rm -rf /var/lib/apt/lists/*
