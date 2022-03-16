@@ -41,7 +41,7 @@ RUN pip3 install --upgrade pip \
 # Stage: Final
 # -----------------------------------------------------------------------------
 
-# Create the runtime image
+# Create the runtime image.
 
 FROM ${BASE_IMAGE} AS runner
 
@@ -51,7 +51,7 @@ LABEL Name="senzing/redoer" \
       Maintainer="support@senzing.com" \
       Version="1.4.7"
 
-# Define health check
+# Define health check.
 
 HEALTHCHECK CMD ["/app/healthcheck.sh"]
 
