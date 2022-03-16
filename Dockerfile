@@ -20,8 +20,8 @@ RUN apt-get update \
  && apt-get -y install \
       python3 \
       python3-dev \
-      python3-venv \
       python3-pip \
+      python3-venv \
  && apt-get clean \
  && rm -rf /var/lib/apt/lists/*
 
@@ -94,10 +94,10 @@ ENV PATH="/app/venv/bin:$PATH"
 
 # Runtime execution.
 
-ENV SENZING_DOCKER_LAUNCHED=true
 ENV LD_LIBRARY_PATH=/opt/senzing/g2/lib:/opt/senzing/g2/lib/debian:/opt/IBM/db2/clidriver/lib
 ENV PATH=${PATH}:/opt/senzing/g2/python:/opt/IBM/db2/clidriver/adm:/opt/IBM/db2/clidriver/bin
 ENV PYTHONPATH=/opt/senzing/g2/python
+ENV SENZING_DOCKER_LAUNCHED=true
 ENV SENZING_ETC_PATH=/etc/opt/senzing
 
 WORKDIR /app
