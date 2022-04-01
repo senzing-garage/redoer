@@ -64,7 +64,7 @@ except:
 __all__ = []
 __version__ = "1.4.7"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2022-03-16'
+__updated__ = '2022-04-01'
 
 SENZING_PRODUCT_ID = "5010"  # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 log_format = '%(asctime)s %(message)s'
@@ -953,7 +953,7 @@ message_dictionary = {
     "903": "Thread: {0} g2_engine.getRedoRecord() -> {1}",
     "904": "Thread: {0} Added message to internal queue: {1}",
     "906": "Thread: {0} re-processing redo record: {1}",
-    "908": "Thread: {0} g2_engine.reinitV2({1})",
+    "908": "Thread: {0} g2_engine.reinit({1})",
     "910": "Thread: {0} g2_engine.process() redo_record: {1}",
     "911": "Thread: {0} g2_engine.process() -> redo_record: {1}",
     "913": "Thread: {0} g2_engine.processWithInfo() redo_record: {1}",
@@ -2630,10 +2630,7 @@ class ProcessRedoQueueThread(threading.Thread):
         # Apply new configuration to g2_engine.
 
         logging.debug(message_debug(908, threading.current_thread().name, default_config_id))
-        if self.senzing_sdk_version_major == 2:
-            self.g2_engine.reinitV2(default_config_id)
-        else:
-            self.g2_engine.reinit(default_config_id)
+        self.g2_engine.reinit(default_config_id)
 
     def run(self):
         ''' Process Senzing redo records. '''
@@ -3032,15 +3029,20 @@ def get_g2_configuration_json(config):
 
 
 def get_g2_configuration_manager(config, g2_configuration_manager_name="loader-G2-configuration-manager"):
-    '''Get the G2Config resource.'''
+    '''Get the G2ConfigMgr resource.'''
     logging.debug(message_debug(950, sys._getframe().f_code.co_name))
     try:
         g2_configuration_json = get_g2_configuration_json(config)
         result = G2ConfigMgr()
-        if config.get("senzing_sdk_version_major") == 2:
-            result.initV2(g2_configuration_manager_name, g2_configuration_json, config.get('debug'))
-        else:
-            result.init(g2_configuration_manager_name, g2_configuration_json, config.get('debug'))
+
+        # Backport methods from earlier Senzing versions.
+
+        if config.get('senzing_sdk_version_major') == 2:
+            result.init = result.initV2
+
+        # Initialize G2ConfigMgr.
+
+        result.init(g2_configuration_manager_name, g2_configuration_json, config.get('debug'))
     except G2ModuleException as err:
         exit_error(896, g2_configuration_json, err)
     logging.debug(message_debug(951, sys._getframe().f_code.co_name))
@@ -3054,10 +3056,16 @@ def get_g2_engine(config, g2_engine_name="loader-G2-engine"):
         g2_configuration_json = get_g2_configuration_json(config)
         result = G2Engine()
         logging.debug(message_debug(950, "g2_engine.init()"))
-        if config.get("senzing_sdk_version_major") == 2:
-            result.initV2(g2_engine_name, g2_configuration_json, config.get('debug'))
-        else:
-            result.init(g2_engine_name, g2_configuration_json, config.get('debug'))
+
+        # Backport methods from earlier Senzing versions.
+
+        if config.get('senzing_sdk_version_major') == 2:
+            result.init = result.initV2
+            result.reinit = result.reinitV2
+
+        # Initialize G2Engine.
+
+        result.init(g2_engine_name, g2_configuration_json, config.get('debug'))
         logging.debug(message_debug(951, "g2_engine.init()"))
         config['last_configuration_check'] = time.time()
     except G2ModuleException as err:
@@ -3080,10 +3088,15 @@ def get_g2_product(config, g2_product_name="loader-G2-product"):
     try:
         g2_configuration_json = get_g2_configuration_json(config)
         result = G2Product()
-        if config.get("senzing_sdk_version_major") == 2:
-            result.initV2(g2_product_name, g2_configuration_json, config.get('debug'))
-        else:
-            result.init(g2_product_name, g2_configuration_json, config.get('debug'))
+
+        # Backport methods from earlier Senzing versions.
+
+        if config.get('senzing_sdk_version_major') == 2:
+            result.init = result.initV2
+
+        # Initialize G2Product.
+
+        result.init(g2_product_name, g2_configuration_json, config.get('debug'))
     except G2ModuleException as err:
         exit_error(892, config.get('g2project_ini'), err)
     logging.debug(message_debug(951, sys._getframe().f_code.co_name))
