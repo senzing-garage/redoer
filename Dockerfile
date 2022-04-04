@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=debian:11.2-slim@sha256:4c25ffa6ef572cf0d57da8c634769a08ae94529f7de5be5587ec8ce7b9b50f9c
+ARG BASE_IMAGE=senzing/senzing-base:1.6.6
 
 # -----------------------------------------------------------------------------
 # Stage: builder
@@ -6,7 +6,7 @@ ARG BASE_IMAGE=debian:11.2-slim@sha256:4c25ffa6ef572cf0d57da8c634769a08ae94529f7
 
 FROM ${BASE_IMAGE} AS builder
 
-ENV REFRESHED_AT=2022-03-17
+ENV REFRESHED_AT=2022-04-01
 
 LABEL Name="senzing/redoer" \
       Maintainer="support@senzing.com" \
@@ -45,7 +45,7 @@ RUN pip3 install --upgrade pip \
 
 FROM ${BASE_IMAGE} AS runner
 
-ENV REFRESHED_AT=2022-03-17
+ENV REFRESHED_AT=2022-04-01
 
 LABEL Name="senzing/redoer" \
       Maintainer="support@senzing.com" \
