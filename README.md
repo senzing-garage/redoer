@@ -490,7 +490,7 @@ The following examples require initialization described in
 
 Configuration values specified by environment variable or command line parameter.
 
-- **[SENZING_CONFIG_PATH]()**
+- **[SENZING_CONFIG_PATH](https://github.com/Senzing/knowledge-base/blob/master/lists/environment-variables.md#senzing_config_path)**
 - **[SENZING_DATABASE_URL](https://github.com/Senzing/knowledge-base/blob/master/lists/environment-variables.md#senzing_database_url)**
 - **[SENZING_DATA_SOURCE](https://github.com/Senzing/knowledge-base/blob/master/lists/environment-variables.md#senzing_data_source)**
 - **[SENZING_DATA_VERSION_DIR](https://github.com/Senzing/knowledge-base/blob/master/lists/environment-variables.md#senzing_data_version_dir)**
