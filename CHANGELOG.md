@@ -6,43 +6,53 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 [markdownlint](https://dlaa.me/markdownlint/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2022-04-08
+
+### Changed in 1.5.0
+
+- In `Dockerfile-with-data`, added docker build args to Dockerfile for more flexibility.
+  - Migrate from `senzingdata-v2` to `senzingdata-v3`
+  - SENZING_APT_REPOSITORY_URL
+  - SENZING_DATA_PACKAGE_NAME
+  - SENZING_DATA_SUBDIRECTORY
+
 ## [1.4.7] - 2022-03-18
 
 ### Changed in 1.4.7
 
- - Support for `libcrypto` and `libssl`
+- Support for `libcrypto` and `libssl`
 
 ## [1.4.6] - 2022-02-25
 
 ### Changed in 1.4.6
 
- - Support for enhanced v3 python package styles
+- Support for enhanced v3 python package styles
 
 ## [1.4.5] - 2022-02-11
 
 ### Changed in 1.4.5
 
- - Improved support for Senzing v2 and v3 python package styles
+- Improved support for Senzing v2 and v3 python package styles
 
 ## [1.4.4] - 2022-02-09
 
 ### Changed in 1.4.4
 
- - Updated base image sha in -with-data dockerfile
+- Updated base image sha in -with-data dockerfile
 
 ## [1.4.3] - 2022-02-07
 
 ### Changed in 1.4.3
 
- - Update to use Debian 11.2
- - restructured to use multistage build.
- - added docker-build-with-data target to makefile
+- Update to use Debian 11.2
+- restructured to use multistage build.
+- added docker-build-with-data target to makefile
 
 ## [1.4.2] - 2022-02-04
 
 ### Changed in 1.4.2
 
- - Support for Senzing v2 and v3 python package styles
+- Support for Senzing v2 and v3 python package styles
 
 ## [1.4.1] - 2021-10-11
 
@@ -55,7 +65,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added in 1.4.0
 
 - Added subcommands for Azure Queue and Azure SQL Database:
-
   - `read-from-azure-queue-withinfo`
   - `read-from-azure-queue`
   - `redo-withinfo-azure-queue`

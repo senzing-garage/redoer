@@ -6,18 +6,21 @@ ARG BASE_IMAGE=debian:11.3-slim@sha256:78fd65998de7a59a001d792fe2d3a6d2ea25b6f3f
 
 FROM ${BASE_IMAGE} AS builder
 
-ENV REFRESHED_AT=2022-04-01
+ENV REFRESHED_AT=2022-04-08
 
 LABEL Name="senzing/redoer" \
       Maintainer="support@senzing.com" \
-      Version="1.4.7"
+      Version="1.5.0"
 
 # Run as "root" for system installation.
 
 USER root
 
+# Install packages via apt.
+
 RUN apt-get update \
  && apt-get -y install \
+      libaio1 \
       python3 \
       python3-dev \
       python3-pip \
@@ -45,11 +48,11 @@ RUN pip3 install --upgrade pip \
 
 FROM ${BASE_IMAGE} AS runner
 
-ENV REFRESHED_AT=2022-04-01
+ENV REFRESHED_AT=2022-04-08
 
 LABEL Name="senzing/redoer" \
       Maintainer="support@senzing.com" \
-      Version="1.4.7"
+      Version="1.5.0"
 
 # Define health check.
 
@@ -90,15 +93,18 @@ USER 1001
 # Activate virtual environment.
 
 ENV VIRTUAL_ENV=/app/venv
-ENV PATH="/app/venv/bin:$PATH"
+ENV PATH="/app/venv/bin:${PATH}"
 
-# Runtime execution.
+# Runtime environment variables.
 
 ENV LD_LIBRARY_PATH=/opt/senzing/g2/lib:/opt/senzing/g2/lib/debian:/opt/IBM/db2/clidriver/lib
 ENV PATH=${PATH}:/opt/senzing/g2/python:/opt/IBM/db2/clidriver/adm:/opt/IBM/db2/clidriver/bin
 ENV PYTHONPATH=/opt/senzing/g2/python
+ENV PYTHONUNBUFFERED=1
 ENV SENZING_DOCKER_LAUNCHED=true
 ENV SENZING_ETC_PATH=/etc/opt/senzing
+
+# Runtime execution.
 
 WORKDIR /app
 ENTRYPOINT ["/app/redoer.py"]
