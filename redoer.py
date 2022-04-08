@@ -62,9 +62,9 @@ except:
 # Metadata
 
 __all__ = []
-__version__ = "1.4.7"  # See https://www.python.org/dev/peps/pep-0396/
+__version__ = "1.5.0"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2022-04-01'
+__updated__ = '2022-04-08'
 
 SENZING_PRODUCT_ID = "5010"  # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 log_format = '%(asctime)s %(message)s'

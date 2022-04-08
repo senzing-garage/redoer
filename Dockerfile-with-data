@@ -12,7 +12,7 @@ ARG SENZING_APT_REPOSITORY_URL=https://senzing-production-apt.s3.amazonaws.com/s
 ARG SENZING_DATA_PACKAGE_NAME=senzingdata-v3
 ARG SENZING_DATA_SUBDIRECTORY=3.0.0
 
-LABEL Name="senzing/redoer-with-data" \
+LABEL Name="senzing/redoer-builder-with-data" \
       Maintainer="support@senzing.com" \
       Version="1.5.0"
 
@@ -49,9 +49,12 @@ RUN curl \
 
 RUN apt-get update \
  && apt-get -y install \
-      senzingdata-v2 \
+      ${SENZING_DATA_PACKAGE_NAME} \
  && apt-get clean \
- && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/* \
+ && mv /opt/senzing/data /opt/senzing/data.bak \
+ && mkdir /opt/senzing/data \
+ && cp -R /opt/senzing/data.bak/${SENZING_DATA_SUBDIRECTORY}/* /opt/senzing/data/
 
 # Create and activate virtual environment.
 
@@ -73,11 +76,11 @@ RUN pip3 install --upgrade pip \
 
 FROM ${BASE_IMAGE} AS runner
 
-ENV REFRESHED_AT=2022-04-01
+ENV REFRESHED_AT=2022-04-08
 
 LABEL Name="senzing/redoer-with-data" \
       Maintainer="support@senzing.com" \
-      Version="1.4.7"
+      Version="1.5.0"
 
 # Define health check.
 
@@ -110,7 +113,7 @@ COPY ./redoer.py /app/
 # Copy python virtual environment and senzing data from the builder image.
 
 COPY --from=builder /app/venv /app/venv
-COPY --from=builder /opt/senzing/data/2.0.0/ /opt/senzing/data/
+COPY --from=builder /opt/senzing/data/ /opt/senzing/data/
 
 # Make non-root container.
 
@@ -119,15 +122,18 @@ USER 1001
 # Activate virtual environment.
 
 ENV VIRTUAL_ENV=/app/venv
-ENV PATH="/app/venv/bin:$PATH"
+ENV PATH="/app/venv/bin:${PATH}"
 
-# Runtime execution.
+# Runtime environment variables.
 
 ENV LD_LIBRARY_PATH=/opt/senzing/g2/lib:/opt/senzing/g2/lib/debian:/opt/IBM/db2/clidriver/lib
 ENV PATH=${PATH}:/opt/senzing/g2/python:/opt/IBM/db2/clidriver/adm:/opt/IBM/db2/clidriver/bin
 ENV PYTHONPATH=/opt/senzing/g2/python
+ENV PYTHONUNBUFFERED=1
 ENV SENZING_DOCKER_LAUNCHED=true
 ENV SENZING_ETC_PATH=/etc/opt/senzing
+
+# Runtime execution.
 
 WORKDIR /app
 ENTRYPOINT ["/app/redoer.py"]
