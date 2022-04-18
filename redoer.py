@@ -64,7 +64,7 @@ except:
 __all__ = []
 __version__ = "1.5.0"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2022-04-08'
+__updated__ = '2022-04-18'
 
 SENZING_PRODUCT_ID = "5010"  # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 log_format = '%(asctime)s %(message)s'
@@ -423,6 +423,11 @@ configuration_locator = {
         "default": "/opt/senzing/data",
         "env": "SENZING_SUPPORT_PATH",
         "cli": "support-path"
+    },
+    "threads_per_read_process": {
+        "default": 1,
+        "env": "SENZING_THREADS_PER_READ_PROCESS",
+        "cli": "threads-per-read-process",
     },
     "threads_per_process": {
         "default": 4,
@@ -810,6 +815,11 @@ def get_parser():
             },
         },
         "threads": {
+            "--threads-per-read-process": {
+                "dest": "threads_per_read_process",
+                "metavar": "SENZING_THREADS_PER_READ_PROCESS",
+                "help": "Number of threads per read process. Default: 1"
+            },
             "--threads-per-process": {
                 "dest": "threads_per_process",
                 "metavar": "SENZING_THREADS_PER_PROCESS",
@@ -3212,13 +3222,14 @@ def redo_processor(
     # Add a single thread for reading from Senzing Redo queue and placing on internal queue.
 
     if read_thread:
-        thread = read_thread(
-            config=config,
-            g2_engine=g2_engine,
-            redo_queue=redo_queue
-        )
-        thread.name = "Process-0-{0}-0".format(thread.__class__.__name__)
-        threads.append(thread)
+        for i in range(0, threads_per_read_process):
+            thread = read_thread(
+                config=config,
+                g2_engine=g2_engine,
+                redo_queue=redo_queue
+            )
+            thread.name = "Process-0-{0}-{1}".format(thread.__class__.__name__, i)
+            threads.append(thread)
 
     # Add a number of threads for processing Redo records from internal queue.
 
