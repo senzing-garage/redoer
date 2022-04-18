@@ -28,7 +28,7 @@ echo "==========================================================="
 echo "== ${SENZING_GIT_REPOSITORY}/hooks/build"
 echo "==   Building with file: ${DOCKERFILE_PATH}"
 echo "==   Environment variables:"
-env | sort | awk -F= '{ print "==     ", $0}'
+env | awk -F= '{ print "==     ", $0}'
 echo "=="
 echo "==   ${BUILD_ARGS_STRING} "
 echo "==   Hook version: 1.0.0 - 2022-04-18"
