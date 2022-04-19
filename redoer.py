@@ -3253,6 +3253,7 @@ def redo_processor(
 
     # Pull values from configuration.
 
+    threads_per_read_process = config.get('threads_per_read_process')
     threads_per_process = config.get('threads_per_process')
     queue_maxsize = config.get('queue_maxsize')
 
