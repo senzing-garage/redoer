@@ -62,9 +62,9 @@ except:
 # Metadata
 
 __all__ = []
-__version__ = "1.5.0"  # See https://www.python.org/dev/peps/pep-0396/
+__version__ = "1.5.1"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2022-04-18'
+__updated__ = '2022-04-19'
 
 SENZING_PRODUCT_ID = "5010"  # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
 log_format = '%(asctime)s %(message)s'
@@ -879,7 +879,6 @@ message_dictionary = {
     "128": "Thread: {0} Adding JSON to info queue: {1}",
     "129": "{0} is running.",
     "130": "{0} has exited.",
-    "131": "Adding redo record to redo queue: {0}",
     "132": "Sleeping {0} seconds before attempting to reconnect to RabbitMQ",
     "133": "RabbitMQ connection is not open. Did opening the connection succeed? Thread {0}",
     "134": "RabbitMQ connection closed by the broker. Thread {0}. Error: {1}",
@@ -911,17 +910,13 @@ message_dictionary = {
     "406": "Thread: {0} Kafka topic: {1} NotImplemented: {2} Message: {3}",
     "407": "Thread: {0} Kafka topic: {1} Unknown error: {2} Message: {3}",
     "408": "Thread: {0} Kafka topic: {1}; message: {2}; error: {3}; error: {4}",
-    "410": "Thread: {0} RabbitMQ queue: {1} Unknown RabbitMQ error when connecting: {2}.",
     "411": "Thread: {0} RabbitMQ queue: {1} Unknown RabbitMQ error: {2} Message: {3}",
-    "412": "Thread: {0} RabbitMQ queue: {1} AMQPConnectionError: {2} Could not connect to RabbitMQ host at {3}. The host name maybe wrong, it may not be ready, or your credentials are incorrect. See the RabbitMQ log for more details.",
     "413": "Thread: {0} RabbitMQ queue: {1} Unknown RabbitMQ error: {2}",
     "414": "Thread: {0} RabbitMQ queue: {1} Error when trying to send message to RabbitMQ: {2}",
     "499": "{0}",
     "500": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}E",
     "561": "Thread: {0} Unknown RabbitMQ error when connecting: {1}",
     "562": "Thread: {0} Could not connect to RabbitMQ host at {2}. The host name maybe wrong, it may not be ready, or your credentials are incorrect. See the RabbitMQ log for more details. Error: {1}",
-    "563": "Thread: {0} The exchange {1} and/or the queue {2} do not exist. Create them, or set rabbitmq-use-existing-entities to False to have stream-producer create them.",
-    "564": "Thread: {0} The exchange {1} and/or the queue {2} exist but are configured with unexpected parameters. Set rabbitmq-use-existing-entities to True to connect to the preconfigured exchange and queue, or delete the existing exchange and queue and try again.",
     "695": "Unknown database scheme '{0}' in database url '{1}'",
     "696": "Bad SENZING_SUBCOMMAND: {0}.",
     "697": "No processing done.",
@@ -932,29 +927,31 @@ message_dictionary = {
     "702": "G2Engine.getRedoRecord() G2ModuleNotInitialized: {0} XML: {1}",
     "703": "G2Engine.getRedoRecord() err: {0}",
     "704": "G2Engine.getRedoRecord() err: {0}; Attempting reprocessing in {1} seconds",
-    "706": "G2Engine.process() bad return code: {0}",
     "707": "Thread: {0} G2Engine.process() G2ModuleNotInitialized: {0} XML: {1}",
-    "708": "G2Engine.process() G2ModuleGenericException: {0} XML: {1}",
     "709": "Thread: {0} G2Engine.process() err: {1}",
     "710": "Thread: {0} G2Engine.process() Database connection error: {1}; Retrying execution",
     "721": "Running low on workers.  May need to restart",
     "722": "Thread: {0} Kafka commit failed for {1}",
     "723": "Detected inactive thread. Total threads: {0}  Active threads: {1}",
     "730": "There are not enough safe characters to do the translation. Unsafe Characters: {0}; Safe Characters: {1}",
+    "801": "G2Engine.getActiveConfigID() error. Error: {0}",
+    "802": "G2ConfigurationManager.getDefaultConfigID() error. Error: {0}",
+    "803": "G2Engine.reinit() error. Default Configuration ID: {0}; Error: {1}",
+    "810": "G2Engine.destroy() error. Error: {0}",
+    "811": "G2Engine.init() error. Engine Name: {0}; Configuration JSON: {1} Error: {2}",
+    "813": "G2ConfigMgr.init() error. Configuration Manager Name: {0}; Configuration JSON: {1} Error: {2}",
+    "815": "G2Product.init() error. Diagnostic Name: {0}; Configuration JSON: {1} Error: {2}",
+    "830": "G2Engine.process() error. Redo Record: {0}; Error: {1}",
+    "831": "G2Engine.process() retry error. Redo Record: {0}; Error: {1}",
+    "832": "G2Engine.processWithInfo() error. Redo Record: {0}; Error: {1}",
+    "833": "G2Engine.processWithInfo() retry error. Redo Record: {0}; Error: {1}",
+    "834": "G2Engine.getRedoRecord() error. Error: {0}",
     "879": "Senzing SDK was not imported.",
     "880": "Unspecific error when {1}. Error: {0}",
     "885": "License has expired.",
-    "886": "G2Engine.addRecord() bad return code: {0}; JSON: {1}",
-    "888": "G2Engine.addRecord() G2ModuleNotInitialized: {0}; JSON: {1}",
-    "889": "G2Engine.addRecord() G2ModuleGenericException: {0}; JSON: {1}",
-    "890": "G2Engine.addRecord() Exception: {0}; JSON: {1}",
     "891": "Original and new database URLs do not match. Original URL: {0}; Reconstructed URL: {1}",
     "892": "Could not initialize G2Product with '{0}'. Error: {1}",
-    "893": "Could not initialize G2Hasher with '{0}'. Error: {1}",
-    "894": "Could not initialize G2Diagnostic with '{0}'. Error: {1}",
-    "895": "Could not initialize G2Audit with '{0}'. Error: {1}",
     "896": "Could not initialize G2ConfigMgr with '{0}'. Error: {1}",
-    "897": "Could not initialize G2Config with '{0}'. Error: {1}",
     "898": "Could not initialize G2Engine with '{0}'. Error: {1}",
     "899": "{0}",
     "900": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}D",
@@ -993,7 +990,6 @@ def message(index, *args):
 
 
 def message_generic(generic_index, index, *args):
-    index_string = str(index)
     return "{0} {1}".format(message(generic_index, index), message(index, *args))
 
 
@@ -2083,13 +2079,19 @@ class ExecuteMixin():
         except Exception as err:
             # OT-TODO: replace this error handling in the future when G2 throws dedicated
             # failed connection exception.
+
+            logging.error(message_error(830, redo_record, err))
             if is_db_connection_error(err.args[0]):
                 logging.warning(message_warning(710, threading.current_thread().name, err))
                 return False
             if self.is_g2_default_configuration_changed():
                 self.update_active_g2_configuration()
                 logging.debug(message_debug(906, threading.current_thread().name, redo_record))
-                self.g2_engine.process(redo_record)
+                try:
+                    self.g2_engine.process(redo_record)
+                except Exception as err:
+                    logging.error(message_error(831, redo_record, err))
+                    raise err
                 logging.debug(message_debug(911, threading.current_thread().name, redo_record))
                 self.config['processed_redo_records'] += 1
             else:
@@ -2136,13 +2138,18 @@ class ExecuteWithInfoMixin():
         except Exception as err:
             # OT-TODO: replace this error handling in the future when G2 throws dedicated
             # failed connection exception.
+            logging.error(message_error(832, redo_record, err))
             if is_db_connection_error(err.args[0]):
                 logging.warning(message_warning(710, threading.current_thread().name, err))
                 return False
             if self.is_g2_default_configuration_changed():
                 self.update_active_g2_configuration()
                 logging.debug(message_debug(906, threading.current_thread().name, redo_record))
-                self.g2_engine.processWithInfo(redo_record, info_bytearray, self.g2_engine_flags)
+                try:
+                    self.g2_engine.processWithInfo(redo_record, info_bytearray, self.g2_engine_flags)
+                except Exception as err:
+                    logging.error(message_error(833, redo_record, err))
+                    raise err
                 logging.debug(message_debug(914, threading.current_thread().name, redo_record, info_bytearray))
                 self.config['processed_redo_records'] += 1
             else:
@@ -2611,36 +2618,66 @@ class ProcessRedoQueueThread(threading.Thread):
         return self.governor.govern()
 
     def is_g2_default_configuration_changed(self):
+        logging.debug(message_debug(950, sys._getframe().f_code.co_name))
+
+        # Update early to avoid "thundering heard problem".
+
+        self.config['last_configuration_check'] = time.time()
 
         # Get active Configuration ID being used by g2_engine.
 
         active_config_id = bytearray()
-        self.g2_engine.getActiveConfigID(active_config_id)
+
+        try:
+            self.g2_engine.getActiveConfigID(active_config_id)
+        except Exception as err:
+            logging.error(message_error(801, err))
+            raise err
 
         # Get most current Configuration ID from G2 database.
 
         default_config_id = bytearray()
-        self.g2_configuration_manager.getDefaultConfigID(default_config_id)
+        try:
+            self.g2_configuration_manager.getDefaultConfigID(default_config_id)
+
+            # Determine if configuration has changed.
+
+            result = active_config_id != default_config_id
+        except Exception as err:
+            logging.error(message_error(802, err))
+            result = False
 
         # Determine if configuration has changed.
 
-        result = active_config_id != default_config_id
         if result:
             logging.info(message_info(292, active_config_id.decode(), default_config_id.decode()))
 
+        logging.debug(message_debug(951, sys._getframe().f_code.co_name))
         return result
 
     def update_active_g2_configuration(self):
+        logging.debug(message_debug(950, sys._getframe().f_code.co_name))
 
         # Get most current Configuration ID from G2 database.
 
         default_config_id = bytearray()
-        self.g2_configuration_manager.getDefaultConfigID(default_config_id)
+        try:
+            self.g2_configuration_manager.getDefaultConfigID(default_config_id)
+        except Exception as err:
+            logging.error(message_error(802, err))
+            raise err
+
+        logging.debug(message_debug(908, threading.current_thread().name, default_config_id))
 
         # Apply new configuration to g2_engine.
 
-        logging.debug(message_debug(908, threading.current_thread().name, default_config_id))
-        self.g2_engine.reinit(default_config_id)
+        try:
+            self.g2_engine.reinit(default_config_id)
+        except Exception as err:
+            logging.error(message_error(803, default_config_id, err))
+            raise err
+
+        logging.debug(message_debug(951, sys._getframe().f_code.co_name))
 
     def run(self):
         ''' Process Senzing redo records. '''
@@ -2719,6 +2756,7 @@ class QueueRedoRecordsThread(threading.Thread):
             except Exception as err:
                 # OT-TODO: replace this error handling in the future when G2 throws dedicated
                 # failed connection exception.
+                logging.error(message_error(834, err))
                 if is_db_connection_error(err.args[0]) and retry_count < redo_retry_limit:
                     retry_count += 1
                     logging.warning(message_warning(704, err, redo_retry_sleep_time_in_seconds))
@@ -3026,6 +3064,7 @@ def get_g2_configuration_dictionary(config):
 
 
 def get_g2_configuration_json(config):
+    ''' Return a JSON string with Senzing configuration. '''
     result = ""
     if config.get('engine_configuration_json'):
         result = config.get('engine_configuration_json')
@@ -3052,7 +3091,11 @@ def get_g2_configuration_manager(config, g2_configuration_manager_name="loader-G
 
         # Initialize G2ConfigMgr.
 
-        result.init(g2_configuration_manager_name, g2_configuration_json, config.get('debug'))
+        try:
+            result.init(g2_configuration_manager_name, g2_configuration_json, config.get('debug'))
+        except Exception as err:
+            logging.error(message_error(813, g2_configuration_manager_name, g2_configuration_json, err))
+            raise err
     except G2ModuleException as err:
         exit_error(896, g2_configuration_json, err)
     logging.debug(message_debug(951, sys._getframe().f_code.co_name))
@@ -3075,7 +3118,11 @@ def get_g2_engine(config, g2_engine_name="loader-G2-engine"):
 
         # Initialize G2Engine.
 
-        result.init(g2_engine_name, g2_configuration_json, config.get('debug'))
+        try:
+            result.init(g2_engine_name, g2_configuration_json, config.get('debug'))
+        except Exception as err:
+            logging.error(message_error(811, g2_engine_name, g2_engine_name, err))
+            raise err
         logging.debug(message_debug(951, "g2_engine.init()"))
         config['last_configuration_check'] = time.time()
     except G2ModuleException as err:
@@ -3106,7 +3153,11 @@ def get_g2_product(config, g2_product_name="loader-G2-product"):
 
         # Initialize G2Product.
 
-        result.init(g2_product_name, g2_configuration_json, config.get('debug'))
+        try:
+            result.init(g2_product_name, g2_configuration_json, config.get('debug'))
+        except Exception as err:
+            logging.error(message_error(815, g2_product_name, g2_configuration_json, err))
+            raise err
     except G2ModuleException as err:
         exit_error(892, config.get('g2project_ini'), err)
     logging.debug(message_debug(951, sys._getframe().f_code.co_name))
@@ -3275,7 +3326,11 @@ def redo_processor(
 
     # Cleanup.
 
-    g2_engine.destroy()
+    try:
+        g2_engine.destroy()
+    except Exception as err:
+        logging.error(message_error(810, err))
+        raise err
 
     # Epilog.
 
