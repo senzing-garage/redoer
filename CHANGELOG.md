@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 [markdownlint](https://dlaa.me/markdownlint/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.2] - 2022-04-21
+
+### Changed in 1.5.2
+
+- Fix datatype error on `SENZING_THREADS_PER_READ_PROCESS`
+
 ## [1.5.1] - 2022-04-19
 
 ### Changed in 1.5.1
