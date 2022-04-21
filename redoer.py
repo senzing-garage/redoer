@@ -64,9 +64,9 @@ except:
 __all__ = []
 __version__ = "1.5.1"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2022-04-19'
+__updated__ = '2022-04-21'
 
-SENZING_PRODUCT_ID = "5010"  # See https://github.com/Senzing/knowledge-base/blob/master/lists/senzing-product-ids.md
+SENZING_PRODUCT_ID = "5010"  # See https://github.com/Senzing/knowledge-base/blob/main/lists/senzing-product-ids.md
 log_format = '%(asctime)s %(message)s'
 
 # Working with bytes.
@@ -1234,6 +1234,7 @@ def get_configuration(args):
         'redo_retry_sleep_time_in_seconds',
         'redo_retry_limit',
         'sleep_time_in_seconds',
+        'threads_per_read_process',
         'threads_per_process'
     ]
     for integer in integers:
@@ -3267,7 +3268,7 @@ def redo_processor(
     g2_configuration_manager = get_g2_configuration_manager(config)
     governor = Governor(g2_engine=g2_engine, hint="redoer")
 
-    # Create threads for master process.
+    # Create threads for main process.
 
     threads = []
 
@@ -3315,12 +3316,12 @@ def redo_processor(
     for thread in threads:
         thread.start()
 
-    # Start administrative threads for master process.
+    # Start administrative threads for main process.
 
     for thread in adminThreads:
         thread.start()
 
-    # Collect inactive threads from master process.
+    # Collect inactive threads from main process.
 
     for thread in threads:
         thread.join()
