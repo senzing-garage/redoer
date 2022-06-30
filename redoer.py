@@ -84,7 +84,6 @@ RESERVED_CHARACTER_LIST = [';', ',', '/', '?', ':', '@', '=', '&']
 # The "CONFIGURATION_LOCATOR" describes where configuration variables are in:
 # 1) Command line options, 2) Environment variables, 3) Configuration files, 4) Default values
 
-GLOBAL_CONFIG = {}
 CONFIGURATION_LOCATOR = {
     "azure_connection_string": {
         "default": None,
@@ -1504,8 +1503,8 @@ class Rabbitmq:
 
     def ack_message(self, delivery_tag):
         try:
-            cb = functools.partial(self.ack_message_callback, delivery_tag)
-            self.connection.add_callback_threadsafe(cb)
+            callback = functools.partial(self.ack_message_callback, delivery_tag)
+            self.connection.add_callback_threadsafe(callback)
         except pika.exceptions.ConnectionClosed as err:
             logging.info(message_info(134, threading.current_thread().name, err))
         except Exception as err:
@@ -2982,10 +2981,12 @@ class QueueRedoRecordsSqsThread(ProcessRedoQueueThread, InputInternalMixin, Exec
 # Utility functions
 # -----------------------------------------------------------------------------
 
+
 def bootstrap_signal_handler(signal_number, frame):
     ''' Exit on signal error. '''
     logging.debug(message_debug(901, signal_number, frame))
     sys.exit(0)
+
 
 def create_signal_handler_function(args):
     ''' Tricky code.  Uses currying technique. Create a function for signal handling.
@@ -3052,8 +3053,8 @@ def exit_silently():
     sys.exit(0)
 
 
-def is_db_connection_error(errorText):
-    return 'Database Connection Failure' in errorText or 'Database Connection Lost' in errorText
+def is_db_connection_error(error_text):
+    return 'Database Connection Failure' in error_text or 'Database Connection Lost' in error_text
 
 # -----------------------------------------------------------------------------
 # Senzing configuration.
@@ -3090,6 +3091,7 @@ def get_g2_configuration_json(config):
 # -----------------------------------------------------------------------------
 # Senzing services.
 # -----------------------------------------------------------------------------
+
 
 def get_g2_configuration_manager(config, g2_configuration_manager_name="loader-G2-configuration-manager"):
     '''Get the G2ConfigMgr resource.'''
@@ -3317,7 +3319,7 @@ def redo_processor(
 
     # Add a monitoring thread.
 
-    adminThreads = []
+    admin_threads = []
 
     if monitor_thread:
         thread = monitor_thread(
@@ -3326,7 +3328,7 @@ def redo_processor(
             workers=threads
         )
         thread.name = "Process-0-{0}-0".format(thread.__class__.__name__)
-        adminThreads.append(thread)
+        admin_threads.append(thread)
 
     # Start threads.
 
@@ -3335,7 +3337,7 @@ def redo_processor(
 
     # Start administrative threads for main process.
 
-    for thread in adminThreads:
+    for thread in admin_threads:
         thread.start()
 
     # Collect inactive threads from main process.
@@ -3801,10 +3803,6 @@ if __name__ == "__main__":
     SIGNAL_HANDLER = create_signal_handler_function(ARGS)
     signal.signal(signal.SIGINT, SIGNAL_HANDLER)
     signal.signal(signal.SIGTERM, SIGNAL_HANDLER)
-
-    # Set global config for use by Flask.
-
-    GLOBAL_CONFIG = get_configuration(SUBCOMMAND, ARGS)
 
     # Transform subcommand from CLI parameter to function name string.
 
