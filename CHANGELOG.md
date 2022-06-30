@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 [markdownlint](https://dlaa.me/markdownlint/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.5] - 2022-06-30
+
+### Changed in 1.5.5
+
+- Add Support for `SENZING_LICENSE_BASE64_ENCODED`
+- Upgrade `Dockerfile` to `FROM debian:11.3-slim@sha256:f6957458017ec31c4e325a76f39d6323c4c21b0e31572efa006baa927a160891`
+
 ## [1.5.4] - 2022-06-08
 
 ### Changed in 1.5.4
