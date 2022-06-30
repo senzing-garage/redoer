@@ -62,9 +62,9 @@ except:
 # Metadata
 
 __all__ = []
-__version__ = "1.5.3"  # See https://www.python.org/dev/peps/pep-0396/
+__version__ = "1.5.5"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2022-05-06'
+__updated__ = '2022-06-30'
 
 SENZING_PRODUCT_ID = "5010"  # See https://github.com/Senzing/knowledge-base/blob/main/lists/senzing-product-ids.md
 log_format = '%(asctime)s %(message)s'
@@ -189,6 +189,11 @@ configuration_locator = {
         "default": "senzing-kafka-redo-topic",
         "env": "SENZING_KAFKA_REDO_TOPIC",
         "cli": "kafka-redo-topic"
+    },
+    "license_base64_encoded": {
+        "default": None,
+        "env": "SENZING_LICENSE_BASE64_ENCODED",
+        "cli": "license-base64-encoded"
     },
     "log_level_parameter": {
         "default": "info",
@@ -583,6 +588,11 @@ def get_parser():
                 "dest": "engine_configuration_json",
                 "metavar": "SENZING_ENGINE_CONFIGURATION_JSON",
                 "help": "Advanced Senzing engine configuration. Default: none"
+            },
+            "--license-base64-encoded": {
+                "dest": "license_base64_encoded",
+                "metavar": "SENZING_LICENSE_BASE64_ENCODED",
+                "help": "Base64 encoding of a Senzing license. Default: none"
             }
         },
         "kafka": {
@@ -3061,6 +3071,9 @@ def get_g2_configuration_dictionary(config):
             "CONNECTION": config.get("g2_database_url_specific"),
         }
     }
+    license_base64_encoded = config.get("license_base64_encoded")
+    if license_base64_encoded:
+        result["PIPELINE"]["LICENSESTRINGBASE64"] = license_base64_encoded
     return result
 
 
