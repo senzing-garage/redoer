@@ -38,15 +38,15 @@ import pika
 
 # Determine "Major" version of Senzing SDK.
 
-senzing_sdk_version_major = None
+SENZING_SDK_VERSION_MAJOR = None
 
 # Import from Senzing.
 
 try:
     from senzing import G2ConfigMgr, G2Engine, G2ModuleException, G2ModuleGenericException, G2ModuleNotInitialized, G2Product
-    senzing_sdk_version_major = 3
+    SENZING_SDK_VERSION_MAJOR = 3
 
-except:
+except Exception:
 
     # Fall back to pre-Senzing-Python-SDK style of imports.
 
@@ -55,19 +55,19 @@ except:
         from G2Engine import G2Engine
         from G2Exception import G2ModuleException, G2ModuleGenericException, G2ModuleNotInitialized
         from G2Product import G2Product
-        senzing_sdk_version_major = 2
-    except:
-        senzing_sdk_version_major = None
+        SENZING_SDK_VERSION_MAJOR = 2
+    except Exception:
+        SENZING_SDK_VERSION_MAJOR = None
 
 # Metadata
 
 __all__ = []
-__version__ = "1.5.3"  # See https://www.python.org/dev/peps/pep-0396/
+__version__ = "1.5.5"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2022-05-06'
+__updated__ = '2022-06-30'
 
 SENZING_PRODUCT_ID = "5010"  # See https://github.com/Senzing/knowledge-base/blob/main/lists/senzing-product-ids.md
-log_format = '%(asctime)s %(message)s'
+LOG_FORMAT = '%(asctime)s %(message)s'
 
 # Working with bytes.
 
@@ -77,14 +77,14 @@ GIGABYTES = 1024 * MEGABYTES
 
 # Lists from https://www.ietf.org/rfc/rfc1738.txt
 
-safe_character_list = ['$', '-', '_', '.', '+', '!', '*', '(', ')', ',', '"'] + list(string.ascii_letters)
-unsafe_character_list = ['"', '<', '>', '#', '%', '{', '}', '|', '\\', '^', '~', '[', ']', '`']
-reserved_character_list = [';', ',', '/', '?', ':', '@', '=', '&']
+SAFE_CHARACTER_LIST = ['$', '-', '_', '.', '+', '!', '*', '(', ')', ',', '"'] + list(string.ascii_letters)
+UNSAFE_CHARACTER_LIST = ['"', '<', '>', '#', '%', '{', '}', '|', '\\', '^', '~', '[', ']', '`']
+RESERVED_CHARACTER_LIST = [';', ',', '/', '?', ':', '@', '=', '&']
 
-# The "configuration_locator" describes where configuration variables are in:
+# The "CONFIGURATION_LOCATOR" describes where configuration variables are in:
 # 1) Command line options, 2) Environment variables, 3) Configuration files, 4) Default values
 
-configuration_locator = {
+CONFIGURATION_LOCATOR = {
     "azure_connection_string": {
         "default": None,
         "env": "SENZING_AZURE_CONNECTION_STRING",
@@ -189,6 +189,11 @@ configuration_locator = {
         "default": "senzing-kafka-redo-topic",
         "env": "SENZING_KAFKA_REDO_TOPIC",
         "cli": "kafka-redo-topic"
+    },
+    "license_base64_encoded": {
+        "default": None,
+        "env": "SENZING_LICENSE_BASE64_ENCODED",
+        "cli": "license-base64-encoded"
     },
     "log_level_parameter": {
         "default": "info",
@@ -436,9 +441,9 @@ configuration_locator = {
     }
 }
 
-# Enumerate keys in 'configuration_locator' that should not be printed to the log.
+# Enumerate keys in 'CONFIGURATION_LOCATOR' that should not be printed to the log.
 
-keys_to_redact = [
+KEYS_TO_REDACT = [
     "engine_configuration_json",
     "g2_database_url_generic",
     "g2_database_url_specific"
@@ -491,18 +496,6 @@ def get_parser():
         },
         'read-from-sqs-withinfo': {
             "help": 'Read Senzing redo records from AWS SQS and send to G2Engine.processWithInfo()',
-            "argument_aspects": ["engine", "threads", "monitoring", "sqs-redo", "sqs-info", "sqs-failure"],
-        },
-        'redo-withinfo-kafka': {
-            "help": 'Read Senzing redo records from Senzing SDK, send to G2Engine.processWithInfo(), results sent to Kafka.',
-            "argument_aspects": ["engine", "threads", "kafka", "kafka-redo", "kafka-info", "kafka-failure"],
-        },
-        'redo-withinfo-rabbitmq': {
-            "help": 'Read Senzing redo records from Senzing SDK, send to G2Engine.processWithInfo(), results sent to RabbitMQ.',
-            "argument_aspects": ["engine", "threads", "monitoring", "rabbitmq", "rabbitmq-redo", "rabbitmq-info", "rabbitmq-failure"],
-        },
-        'redo-withinfo-sqs': {
-            "help": 'Read Senzing redo records from Senzing SDK, send to G2Engine.processWithInfo(), results sent to AWS SQS.',
             "argument_aspects": ["engine", "threads", "monitoring", "sqs-redo", "sqs-info", "sqs-failure"],
         },
         'write-to-azure-queue': {
@@ -583,6 +576,11 @@ def get_parser():
                 "dest": "engine_configuration_json",
                 "metavar": "SENZING_ENGINE_CONFIGURATION_JSON",
                 "help": "Advanced Senzing engine configuration. Default: none"
+            },
+            "--license-base64-encoded": {
+                "dest": "license_base64_encoded",
+                "metavar": "SENZING_LICENSE_BASE64_ENCODED",
+                "help": "Base64 encoding of a Senzing license. Default: none"
             }
         },
         "kafka": {
@@ -830,14 +828,14 @@ def get_parser():
 
     # Augment "subcommands" variable with arguments specified by aspects.
 
-    for subcommand, subcommand_value in subcommands.items():
+    for subcommand_value in subcommands.values():
         if 'argument_aspects' in subcommand_value:
             for aspect in subcommand_value['argument_aspects']:
-                if 'arguments' not in subcommands[subcommand]:
-                    subcommands[subcommand]['arguments'] = {}
+                if 'arguments' not in subcommand_value:
+                    subcommand_value['arguments'] = {}
                 arguments = argument_aspects.get(aspect, {})
                 for argument, argument_value in arguments.items():
-                    subcommands[subcommand]['arguments'][argument] = argument_value
+                    subcommand_value['arguments'][argument] = argument_value
 
     # Parse command line arguments.
 
@@ -869,7 +867,7 @@ MESSAGE_WARN = 300
 MESSAGE_ERROR = 700
 MESSAGE_DEBUG = 900
 
-message_dictionary = {
+MESSAGE_DICTIONARY = {
     "100": "senzing-" + SENZING_PRODUCT_ID + "{0:04d}I",
     "103": "Thread: {0} Kafka topic: {1}; message: {2}; error: {3}; error: {4}",
     "120": "Sleeping for requested delay of {0} seconds.",
@@ -984,28 +982,34 @@ message_dictionary = {
 
 
 def message(index, *args):
+    ''' Return an instantiated message. '''
     index_string = str(index)
-    template = message_dictionary.get(index_string, "No message for index {0}.".format(index_string))
+    template = MESSAGE_DICTIONARY.get(index_string, "No message for index {0}.".format(index_string))
     return template.format(*args)
 
 
 def message_generic(generic_index, index, *args):
+    ''' Return a formatted message. '''
     return "{0} {1}".format(message(generic_index, index), message(index, *args))
 
 
 def message_info(index, *args):
+    ''' Return an info message. '''
     return message_generic(MESSAGE_INFO, index, *args)
 
 
 def message_warning(index, *args):
+    ''' Return a warning message. '''
     return message_generic(MESSAGE_WARN, index, *args)
 
 
 def message_error(index, *args):
+    ''' Return an error message. '''
     return message_generic(MESSAGE_ERROR, index, *args)
 
 
 def message_debug(index, *args):
+    ''' Return a debug message. '''
     return message_generic(MESSAGE_DEBUG, index, *args)
 
 
@@ -1031,24 +1035,30 @@ def get_exception():
 # -----------------------------------------------------------------------------
 
 
-def translate(map, astring):
+def translate(a_map, astring):
+    ''' Translate characters. '''
+
     new_string = str(astring)
-    for key, value in map.items():
+    for key, value in a_map.items():
         new_string = new_string.replace(key, value)
     return new_string
 
 
 def get_unsafe_characters(astring):
+    ''' Return the list of unsafe characters found in astring. '''
+
     result = []
-    for unsafe_character in unsafe_character_list:
+    for unsafe_character in UNSAFE_CHARACTER_LIST:
         if unsafe_character in astring:
             result.append(unsafe_character)
     return result
 
 
 def get_safe_characters(astring):
+    ''' Return the list of safe characters found in astring. '''
+
     result = []
-    for safe_character in safe_character_list:
+    for safe_character in SAFE_CHARACTER_LIST:
         if safe_character not in astring:
             result.append(safe_character)
     return result
@@ -1155,13 +1165,13 @@ def get_g2_database_url_specific(generic_database_url):
     return result
 
 
-def get_configuration(args):
+def get_configuration(subcommand, args):
     ''' Order of precedence: CLI, OS environment variables, INI file, default. '''
     result = {}
 
     # Copy default values into configuration dictionary.
 
-    for key, value in list(configuration_locator.items()):
+    for key, value in list(CONFIGURATION_LOCATOR.items()):
         result[key] = value.get('default', None)
 
     # "Prime the pump" with command line args. This will be done again as the last step.
@@ -1173,7 +1183,7 @@ def get_configuration(args):
 
     # Copy OS environment variables into configuration dictionary.
 
-    for key, value in list(configuration_locator.items()):
+    for key, value in list(CONFIGURATION_LOCATOR.items()):
         os_env_var = value.get('env', None)
         if os_env_var:
             os_env_value = os.getenv(os_env_var, None)
@@ -1191,7 +1201,7 @@ def get_configuration(args):
 
     result['program_version'] = __version__
     result['program_updated'] = __updated__
-    result['senzing_sdk_version_major'] = senzing_sdk_version_major
+    result['senzing_sdk_version_major'] = SENZING_SDK_VERSION_MAJOR
 
     # Add "run_as" information.
 
@@ -1301,10 +1311,10 @@ def validate_configuration(config):
 def redact_configuration(config):
     ''' Return a shallow copy of config with certain keys removed. '''
     result = config.copy()
-    for key in keys_to_redact:
+    for key in KEYS_TO_REDACT:
         try:
             result.pop(key)
-        except:
+        except Exception:
             pass
     return result
 
@@ -1315,7 +1325,7 @@ def redact_configuration(config):
 
 class Governor:
 
-    def __init__(self, g2_engine=None, hint=None, *args, **kwargs):
+    def __init__(self, *args, g2_engine=None, hint=None, **kwargs):
         self.g2_engine = g2_engine
         self.hint = hint
 
@@ -1328,7 +1338,7 @@ class Governor:
     def __enter__(self):
         return self
 
-    def __exit__(self, type, value, traceback):
+    def __exit__(self, a_type, value, traceback):
         self.close()
 
 # -----------------------------------------------------------------------------
@@ -1338,10 +1348,10 @@ class Governor:
 
 class InfoFilter:
 
-    def __init__(self, g2_engine=None, *args, **kwargs):
+    def __init__(self, *args, g2_engine=None, **kwargs):
         self.g2_engine = g2_engine
 
-    def filter(self, message=None, *args, **kwargs):
+    def filter(self, *args, message=None, **kwargs):
         return message
 
 # -----------------------------------------------------------------------------
@@ -1355,20 +1365,20 @@ class Rabbitmq:
     '''
 
     def __init__(
-        self,
-        username,
-        password,
-        host,
-        queue_name,
-        exchange,
-        virtual_host,
-        heartbeat,
-        routing_key,
-        passive,
-        delivery_mode=2,
-        prefetch_count=1,
-        reconnect_delay_in_seconds=60
-    ):
+            self,
+            username,
+            password,
+            host,
+            queue_name,
+            exchange,
+            virtual_host,
+            heartbeat,
+            routing_key,
+            passive,
+            delivery_mode=2,
+            prefetch_count=1,
+            reconnect_delay_in_seconds=60
+        ):
 
         logging.debug(message_debug(995, threading.current_thread().name, "Rabbitmq"))
 
@@ -1493,8 +1503,8 @@ class Rabbitmq:
 
     def ack_message(self, delivery_tag):
         try:
-            cb = functools.partial(self.ack_message_callback, delivery_tag)
-            self.connection.add_callback_threadsafe(cb)
+            callback = functools.partial(self.ack_message_callback, delivery_tag)
+            self.connection.add_callback_threadsafe(callback)
         except pika.exceptions.ConnectionClosed as err:
             logging.info(message_info(134, threading.current_thread().name, err))
         except Exception as err:
@@ -1508,7 +1518,7 @@ class Rabbitmq:
 
     def send(self, message):
         logging.debug(message_debug(916, threading.current_thread().name, self.queue_name, message))
-        assert type(message) == str
+        assert isinstance(message, str)
         message_bytes = message.encode()
         while True:
             try:
@@ -1579,7 +1589,7 @@ class RabbitmqSubscribeThread(threading.Thread):
         Put message into internal queue.
         '''
         logging.debug(message_debug(917, threading.current_thread().name, self.queue_name, message))
-        if type(message) == bytes:
+        if isinstance(message, bytes):
             message = message.decode()
         assert isinstance(message, str)
         self.internal_queue.put((message, method.delivery_tag))
@@ -1603,10 +1613,10 @@ class MonitorThread(threading.Thread):
     def __init__(self, config=None, g2_engine=None, workers=None):
         threading.Thread.__init__(self)
         self.config = config
-        self.digits_regex_pattern = re.compile(':\d+$')
+        self.digits_regex_pattern = re.compile(r':\d+$')
         self.exit_on_thread_termination = self.config.get("exit_on_thread_termination")
         self.g2_engine = g2_engine
-        self.in_regex_pattern = re.compile('\sin\s')
+        self.in_regex_pattern = re.compile(r'\sin\s')
         self.log_level_parameter = config.get("log_level_parameter")
         self.log_license_period_in_seconds = self.config.get("log_license_period_in_seconds")
         self.pstack_pid = config.get("pstack_pid")
@@ -1715,7 +1725,8 @@ class MonitorThread(threading.Thread):
 
                     completed_process = subprocess.run(
                         ["gdb", "-q", "-p", self.pstack_pid, "-batch", "-ex", "thread apply all bt"],
-                        capture_output=True)
+                        capture_output=True,
+                        check=True)
 
                 except Exception as err:
                     logging.warning(message_warning(999, err))
@@ -1875,11 +1886,9 @@ class InputKafkaMixin():
             if kafka_message is None:
                 continue
             if kafka_message.error():
-                if kafka_message.error().code() == confluent_kafka.KafkaError._PARTITION_EOF:
-                    continue
-                else:
+                if kafka_message.error().code() != confluent_kafka.KafkaError._PARTITION_EOF:
                     logging.error(message_error(722, threading.current_thread().name, kafka_message.error()))
-                    continue
+                continue
 
             # Construct and verify Kafka message.
 
@@ -2456,7 +2465,7 @@ class OutputKafkaMixin():
 
     def send_to_info_queue(self, message):
         logging.debug(message_debug(916, threading.current_thread().name, self.kafka_info_topic, message))
-        assert type(message) == str
+        assert isinstance(message, str)
         try:
             self.kafka_info_producer.produce(self.kafka_info_topic, message, on_delivery=self.on_kafka_delivery)
             self.config['sent_to_info_queue'] += 1
@@ -2581,7 +2590,7 @@ class QueueInternalMixin():
         logging.debug(message_debug(996, threading.current_thread().name, "QueueInternalMixin"))
 
     def send_to_redo_queue(self, redo_record):
-        assert type(redo_record) == tuple
+        assert isinstance(redo_record, tuple)
         self.redo_queue.put(redo_record)
 
 # =============================================================================
@@ -2973,7 +2982,9 @@ class QueueRedoRecordsSqsThread(ProcessRedoQueueThread, InputInternalMixin, Exec
 # -----------------------------------------------------------------------------
 
 
-def bootstrap_signal_handler(signal, frame):
+def bootstrap_signal_handler(signal_number, frame):
+    ''' Exit on signal error. '''
+    logging.debug(message_debug(901, signal_number, frame))
     sys.exit(0)
 
 
@@ -2984,6 +2995,7 @@ def create_signal_handler_function(args):
 
     def result_function(signal_number, frame):
         logging.info(message_info(298, args))
+        logging.debug(message_debug(901, signal_number, frame))
         sys.exit(0)
 
     return result_function
@@ -3041,8 +3053,8 @@ def exit_silently():
     sys.exit(0)
 
 
-def is_db_connection_error(errorText):
-    return 'Database Connection Failure' in errorText or 'Database Connection Lost' in errorText
+def is_db_connection_error(error_text):
+    return 'Database Connection Failure' in error_text or 'Database Connection Lost' in error_text
 
 # -----------------------------------------------------------------------------
 # Senzing configuration.
@@ -3061,6 +3073,9 @@ def get_g2_configuration_dictionary(config):
             "CONNECTION": config.get("g2_database_url_specific"),
         }
     }
+    license_base64_encoded = config.get("license_base64_encoded")
+    if license_base64_encoded:
+        result["PIPELINE"]["LICENSESTRINGBASE64"] = license_base64_encoded
     return result
 
 
@@ -3173,22 +3188,22 @@ def log_license(config):
     '''Capture the license and version info in the log.'''
 
     g2_product = get_g2_product(config)
-    license = json.loads(g2_product.license())
+    senzing_license = json.loads(g2_product.license())
     version = json.loads(g2_product.version())
 
     logging.info(message_info(160, '-' * 20))
     if 'VERSION' in version:
         logging.info(message_info(161, version['VERSION'], version['BUILD_DATE']))
-    if 'customer' in license:
-        logging.info(message_info(162, license['customer']))
-    if 'licenseType' in license:
-        logging.info(message_info(163, license['licenseType']))
-    if 'expireDate' in license:
-        logging.info(message_info(164, license['expireDate']))
+    if 'customer' in senzing_license:
+        logging.info(message_info(162, senzing_license['customer']))
+    if 'licenseType' in senzing_license:
+        logging.info(message_info(163, senzing_license['licenseType']))
+    if 'expireDate' in senzing_license:
+        logging.info(message_info(164, senzing_license['expireDate']))
 
         # Calculate days remaining.
 
-        expire_date = datetime.datetime.strptime(license['expireDate'], '%Y-%m-%d')
+        expire_date = datetime.datetime.strptime(senzing_license['expireDate'], '%Y-%m-%d')
         today = datetime.datetime.today()
         remaining_time = expire_date - today
         if remaining_time.days > 0:
@@ -3199,12 +3214,12 @@ def log_license(config):
         else:
             logging.info(message_info(168, abs(remaining_time.days)))
 
-        # Issue warning if license is about to expire.
+        # Issue warning if senzing_license is about to expire.
 
-    if 'recordLimit' in license:
-        logging.info(message_info(166, license['recordLimit']))
-    if 'contract' in license:
-        logging.info(message_info(167, license['contract']))
+    if 'recordLimit' in senzing_license:
+        logging.info(message_info(166, senzing_license['recordLimit']))
+    if 'contract' in senzing_license:
+        logging.info(message_info(167, senzing_license['contract']))
     logging.info(message_info(299, '-' * 49))
 
     # Garbage collect g2_product.
@@ -3222,17 +3237,21 @@ def log_license(config):
 
 
 def redo_processor(
-    args=None,
-    options_to_defaults_map={},
-    read_thread=None,
-    process_thread=None,
-    monitor_thread=None
-):
+        args=None,
+        monitor_thread=None,
+        options_to_defaults_map=None,
+        process_thread=None,
+        read_thread=None,
+        subcommand=None,
+    ):
 
     # Get context from CLI, environment variables, and ini files.
 
-    config = get_configuration(args)
+    config = get_configuration(subcommand, args)
     validate_configuration(config)
+
+    if not options_to_defaults_map:
+        options_to_defaults_map = {}
 
     # If configuration values not specified, use defaults.
 
@@ -3300,7 +3319,7 @@ def redo_processor(
 
     # Add a monitoring thread.
 
-    adminThreads = []
+    admin_threads = []
 
     if monitor_thread:
         thread = monitor_thread(
@@ -3309,7 +3328,7 @@ def redo_processor(
             workers=threads
         )
         thread.name = "Process-0-{0}-0".format(thread.__class__.__name__)
-        adminThreads.append(thread)
+        admin_threads.append(thread)
 
     # Start threads.
 
@@ -3318,7 +3337,7 @@ def redo_processor(
 
     # Start administrative threads for main process.
 
-    for thread in adminThreads:
+    for thread in admin_threads:
         thread.start()
 
     # Collect inactive threads from main process.
@@ -3344,12 +3363,12 @@ def redo_processor(
 # -----------------------------------------------------------------------------
 
 
-def do_docker_acceptance_test(args):
+def do_docker_acceptance_test(subcommand, args):
     ''' For use with Docker acceptance testing. '''
 
     # Get context from CLI, environment variables, and ini files.
 
-    config = get_configuration(args)
+    config = get_configuration(subcommand, args)
 
     # Prolog.
 
@@ -3360,7 +3379,7 @@ def do_docker_acceptance_test(args):
     logging.info(exit_template(config))
 
 
-def do_read_from_azure_queue(args):
+def do_read_from_azure_queue(subcommand, args):
     '''
     Read Senzing redo records from Azure Queue and send to G2Engine.process().
     "withinfo" is not returned.
@@ -3368,12 +3387,13 @@ def do_read_from_azure_queue(args):
 
     redo_processor(
         args=args,
+        monitor_thread=MonitorThread,
         process_thread=ProcessReadFromAzureQueueThread,
-        monitor_thread=MonitorThread
+        subcommand=subcommand
     )
 
 
-def do_read_from_kafka(args):
+def do_read_from_kafka(subcommand, args):
     '''
     Read Senzing redo records from Kafka and send to G2Engine.process().
     "withinfo" is not returned.
@@ -3385,13 +3405,14 @@ def do_read_from_kafka(args):
 
     redo_processor(
         args=args,
+        monitor_thread=MonitorThread,
         options_to_defaults_map=options_to_defaults_map,
         process_thread=ProcessReadFromKafkaThread,
-        monitor_thread=MonitorThread
+        subcommand=subcommand
     )
 
 
-def do_read_from_rabbitmq(args):
+def do_read_from_rabbitmq(subcommand, args):
     '''
     Read Senzing redo records from RabbitMQ and send to G2Engine.process().
     "withinfo" is not returned.
@@ -3407,13 +3428,14 @@ def do_read_from_rabbitmq(args):
 
     redo_processor(
         args=args,
+        monitor_thread=MonitorThread,
         options_to_defaults_map=options_to_defaults_map,
         process_thread=ProcessReadFromRabbitmqThread,
-        monitor_thread=MonitorThread
+        subcommand=subcommand
     )
 
 
-def do_read_from_sqs(args):
+def do_read_from_sqs(subcommand, args):
     '''
     Read Senzing redo records from RabbitMQ and send to G2Engine.process().
     "withinfo" is not returned.
@@ -3421,12 +3443,13 @@ def do_read_from_sqs(args):
 
     redo_processor(
         args=args,
+        monitor_thread=MonitorThread,
         process_thread=ProcessReadFromSqsThread,
-        monitor_thread=MonitorThread
+        subcommand=subcommand
     )
 
 
-def do_read_from_azure_queue_withinfo(args):
+def do_read_from_azure_queue_withinfo(subcommand, args):
     '''
     Read Senzing redo records from Azure queue and send to G2Engine.processWithInfo().
     "withinfo" returned is sent to Azure queue.
@@ -3434,12 +3457,13 @@ def do_read_from_azure_queue_withinfo(args):
 
     redo_processor(
         args=args,
+        monitor_thread=MonitorThread,
         process_thread=ProcessReadFromAzureQueueWithinfoThread,
-        monitor_thread=MonitorThread
+        subcommand=subcommand
     )
 
 
-def do_read_from_kafka_withinfo(args):
+def do_read_from_kafka_withinfo(subcommand, args):
     '''
     Read Senzing redo records from Kafka and send to G2Engine.processWithInfo().
     "withinfo" returned is sent to Kafka.
@@ -3453,13 +3477,14 @@ def do_read_from_kafka_withinfo(args):
 
     redo_processor(
         args=args,
+        monitor_thread=MonitorThread,
         options_to_defaults_map=options_to_defaults_map,
         process_thread=ProcessReadFromKafkaWithinfoThread,
-        monitor_thread=MonitorThread
+        subcommand=subcommand
     )
 
 
-def do_read_from_rabbitmq_withinfo(args):
+def do_read_from_rabbitmq_withinfo(subcommand, args):
     '''
     Read Senzing redo records from RabbitMQ and send to G2Engine.processWithInfo().
     "withinfo" returned is sent to RabbitMQ.
@@ -3485,13 +3510,14 @@ def do_read_from_rabbitmq_withinfo(args):
 
     redo_processor(
         args=args,
+        monitor_thread=MonitorThread,
         options_to_defaults_map=options_to_defaults_map,
         process_thread=ProcessReadFromRabbitmqWithinfoThread,
-        monitor_thread=MonitorThread
+        subcommand=subcommand
     )
 
 
-def do_read_from_sqs_withinfo(args):
+def do_read_from_sqs_withinfo(subcommand, args):
     '''
     Read Senzing redo records from AWS SQS and send to G2Engine.processWithInfo().
     "withinfo" returned is sent to AWS SQS.
@@ -3499,12 +3525,13 @@ def do_read_from_sqs_withinfo(args):
 
     redo_processor(
         args=args,
+        monitor_thread=MonitorThread,
         process_thread=ProcessReadFromSqsWithinfoThread,
-        monitor_thread=MonitorThread
+        subcommand=subcommand
     )
 
 
-def do_redo(args):
+def do_redo(subcommand, args):
     '''
     Read Senzing redo records from Senzing SDK and send to G2Engine.process().
     No external queues are used.  "withinfo" is not returned.
@@ -3512,13 +3539,14 @@ def do_redo(args):
 
     redo_processor(
         args=args,
-        read_thread=QueueRedoRecordsInternalThread,
+        monitor_thread=MonitorThread,
         process_thread=ProcessRedoThread,
-        monitor_thread=MonitorThread
+        read_thread=QueueRedoRecordsInternalThread,
+        subcommand=subcommand
     )
 
 
-def do_redo_withinfo_azure_queue(args):
+def do_redo_withinfo_azure_queue(subcommand, args):
     '''
     Read Senzing redo records from Senzing SDK and send to G2Engine.processWithInfo().
     No external queues are used.  "withinfo" returned is sent to Azure queue.
@@ -3526,13 +3554,14 @@ def do_redo_withinfo_azure_queue(args):
 
     redo_processor(
         args=args,
-        read_thread=QueueRedoRecordsInternalThread,
+        monitor_thread=MonitorThread,
         process_thread=ProcessRedoWithinfoAzureQueueThread,
-        monitor_thread=MonitorThread
+        read_thread=QueueRedoRecordsInternalThread,
+        subcommand=subcommand
     )
 
 
-def do_redo_withinfo_kafka(args):
+def do_redo_withinfo_kafka(subcommand, args):
     '''
     Read Senzing redo records from Senzing SDK and send to G2Engine.processWithInfo().
     No external queues are used.  "withinfo" returned is sent to kafka.
@@ -3545,14 +3574,15 @@ def do_redo_withinfo_kafka(args):
 
     redo_processor(
         args=args,
+        monitor_thread=MonitorThread,
         options_to_defaults_map=options_to_defaults_map,
-        read_thread=QueueRedoRecordsInternalThread,
         process_thread=ProcessRedoWithinfoKafkaThread,
-        monitor_thread=MonitorThread
+        read_thread=QueueRedoRecordsInternalThread,
+        subcommand=subcommand
     )
 
 
-def do_redo_withinfo_rabbitmq(args):
+def do_redo_withinfo_rabbitmq(subcommand, args):
     '''
     Read Senzing redo records from Senzing SDK and send to G2Engine.processWithInfo().
     No external queues are used.  "withinfo" returned is sent to RabbitMQ.
@@ -3573,14 +3603,15 @@ def do_redo_withinfo_rabbitmq(args):
 
     redo_processor(
         args=args,
+        monitor_thread=MonitorThread,
         options_to_defaults_map=options_to_defaults_map,
-        read_thread=QueueRedoRecordsInternalThread,
         process_thread=ProcessRedoWithinfoRabbitmqThread,
-        monitor_thread=MonitorThread
+        read_thread=QueueRedoRecordsInternalThread,
+        subcommand=subcommand
     )
 
 
-def do_redo_withinfo_sqs(args):
+def do_redo_withinfo_sqs(subcommand, args):
     '''
     Read Senzing redo records from Senzing SDK and send to G2Engine.processWithInfo().
     No external queues are used.  "withinfo" returned is sent to RabbitMQ.
@@ -3588,18 +3619,19 @@ def do_redo_withinfo_sqs(args):
 
     redo_processor(
         args=args,
-        read_thread=QueueRedoRecordsInternalThread,
+        monitor_thread=MonitorThread,
         process_thread=ProcessRedoWithinfoSqsThread,
-        monitor_thread=MonitorThread
+        read_thread=QueueRedoRecordsInternalThread,
+        subcommand=subcommand
     )
 
 
-def do_sleep(args):
+def do_sleep(subcommand, args):
     ''' Sleep.  Used for debugging. '''
 
     # Get context from CLI, environment variables, and ini files.
 
-    config = get_configuration(args)
+    config = get_configuration(subcommand, args)
 
     # Prolog.
 
@@ -3609,7 +3641,7 @@ def do_sleep(args):
 
     sleep_time_in_seconds = config.get('sleep_time_in_seconds')
 
-    # Sleep
+    # Sleep.
 
     if sleep_time_in_seconds > 0:
         logging.info(message_info(296, sleep_time_in_seconds))
@@ -3626,7 +3658,7 @@ def do_sleep(args):
     logging.info(exit_template(config))
 
 
-def do_write_to_azure_queue(args):
+def do_write_to_azure_queue(subcommand, args):
     '''
     Read Senzing redo records from Senzing SDK and send to Azure Queue.
     No g2_engine processing is done.
@@ -3634,13 +3666,14 @@ def do_write_to_azure_queue(args):
 
     redo_processor(
         args=args,
-        read_thread=QueueRedoRecordsInternalThread,
+        monitor_thread=MonitorThread,
         process_thread=QueueRedoRecordsAzureQueueThread,
-        monitor_thread=MonitorThread
+        read_thread=QueueRedoRecordsInternalThread,
+        subcommand=subcommand
     )
 
 
-def do_write_to_kafka(args):
+def do_write_to_kafka(subcommand, args):
     '''
     Read Senzing redo records from Senzing SDK and send to Kafka.
     No g2_engine processing is done.
@@ -3652,14 +3685,15 @@ def do_write_to_kafka(args):
 
     redo_processor(
         args=args,
+        monitor_thread=MonitorThread,
         options_to_defaults_map=options_to_defaults_map,
-        read_thread=QueueRedoRecordsInternalThread,
         process_thread=QueueRedoRecordsKafkaThread,
-        monitor_thread=MonitorThread
+        read_thread=QueueRedoRecordsInternalThread,
+        subcommand=subcommand
     )
 
 
-def do_write_to_rabbitmq(args):
+def do_write_to_rabbitmq(subcommand, args):
     '''
     Read Senzing redo records from Senzing SDK and send to RabbitMQ.
     No g2_engine processing is done.
@@ -3675,14 +3709,15 @@ def do_write_to_rabbitmq(args):
 
     redo_processor(
         args=args,
+        monitor_thread=MonitorThread,
         options_to_defaults_map=options_to_defaults_map,
-        read_thread=QueueRedoRecordsInternalThread,
         process_thread=QueueRedoRecordsRabbitmqThread,
-        monitor_thread=MonitorThread
+        read_thread=QueueRedoRecordsInternalThread,
+        subcommand=subcommand
     )
 
 
-def do_write_to_sqs(args):
+def do_write_to_sqs(subcommand, args):
     '''
     Read Senzing redo records from Senzing SDK and send to AWS SQS.
     No g2_engine processing is done.
@@ -3690,16 +3725,18 @@ def do_write_to_sqs(args):
 
     redo_processor(
         args=args,
-        read_thread=QueueRedoRecordsInternalThread,
+        monitor_thread=MonitorThread,
         process_thread=QueueRedoRecordsSqsThread,
-        monitor_thread=MonitorThread
+        read_thread=QueueRedoRecordsInternalThread,
+        subcommand=subcommand
     )
 
 
-def do_version(args):
+def do_version(subcommand, args):
     ''' Log version information. '''
 
     logging.info(message_info(294, __version__, __updated__))
+    logging.debug(message_debug(902, subcommand, args))
 
 # -----------------------------------------------------------------------------
 # Main
@@ -3710,7 +3747,7 @@ if __name__ == "__main__":
 
     # Configure logging. See https://docs.python.org/2/library/logging.html#levels
 
-    log_level_map = {
+    LOG_LEVEL_MAP = {
         "notset": logging.NOTSET,
         "debug": logging.DEBUG,
         "info": logging.INFO,
@@ -3720,9 +3757,9 @@ if __name__ == "__main__":
         "critical": logging.CRITICAL
     }
 
-    log_level_parameter = os.getenv("SENZING_LOG_LEVEL", "info").lower()
-    log_level = log_level_map.get(log_level_parameter, logging.INFO)
-    logging.basicConfig(format=log_format, level=log_level)
+    LOG_LEVEL_PARAMETER = os.getenv("SENZING_LOG_LEVEL", "info").lower()
+    LOG_LEVEL = LOG_LEVEL_MAP.get(LOG_LEVEL_PARAMETER, logging.INFO)
+    logging.basicConfig(format=LOG_FORMAT, level=LOG_LEVEL)
     logging.debug(message_debug(998))
 
     # Trap signals temporarily until args are parsed.
@@ -3741,43 +3778,43 @@ if __name__ == "__main__":
 
     # Warn that Senzing was not imported.
 
-    if not senzing_sdk_version_major:
+    if not SENZING_SDK_VERSION_MAJOR:
         logging.warning(message_warning(879))
 
     # Parse the command line arguments.
 
-    subcommand = os.getenv("SENZING_SUBCOMMAND", None)
-    parser = get_parser()
+    SUBCOMMAND = os.getenv("SENZING_SUBCOMMAND", None)
+    PARSER = get_parser()
     if len(sys.argv) > 1:
-        args = parser.parse_args()
-        subcommand = args.subcommand
-    elif subcommand:
-        args = argparse.Namespace(subcommand=subcommand)
+        ARGS = PARSER.parse_args()
+        SUBCOMMAND = ARGS.subcommand
+    elif SUBCOMMAND:
+        ARGS = argparse.Namespace(subcommand=SUBCOMMAND)
     else:
-        parser.print_help()
-        if len(os.getenv("SENZING_DOCKER_LAUNCHED", "")):
-            subcommand = "sleep"
-            args = argparse.Namespace(subcommand=subcommand)
-            do_sleep(args)
+        PARSER.print_help()
+        if len(os.getenv("SENZING_DOCKER_LAUNCHED", "")) > 0:
+            SUBCOMMAND = "sleep"
+            ARGS = argparse.Namespace(subcommand=SUBCOMMAND)
+            do_sleep(SUBCOMMAND, ARGS)
         exit_silently()
 
     # Catch interrupts. Tricky code: Uses currying.
 
-    signal_handler = create_signal_handler_function(args)
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
+    SIGNAL_HANDLER = create_signal_handler_function(ARGS)
+    signal.signal(signal.SIGINT, SIGNAL_HANDLER)
+    signal.signal(signal.SIGTERM, SIGNAL_HANDLER)
 
     # Transform subcommand from CLI parameter to function name string.
 
-    subcommand_function_name = "do_{0}".format(subcommand.replace('-', '_'))
+    SUBCOMMAND_FUNCTION_NAME = "do_{0}".format(SUBCOMMAND.replace('-', '_'))
 
     # Test to see if function exists in the code.
 
-    if subcommand_function_name not in globals():
-        logging.warning(message_warning(696, subcommand))
-        parser.print_help()
+    if SUBCOMMAND_FUNCTION_NAME not in globals():
+        logging.warning(message_warning(696, SUBCOMMAND))
+        PARSER.print_help()
         exit_silently()
 
     # Tricky code for calling function based on string.
 
-    globals()[subcommand_function_name](args)
+    globals()[SUBCOMMAND_FUNCTION_NAME](SUBCOMMAND, ARGS)
