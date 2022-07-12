@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=senzing/senzingapi-runtime:0.1.0
+ARG BASE_IMAGE=senzing/senzingapi-runtime:3.1.0
 
 # -----------------------------------------------------------------------------
 # Stage: builder
@@ -6,7 +6,7 @@ ARG BASE_IMAGE=senzing/senzingapi-runtime:0.1.0
 
 FROM ${BASE_IMAGE} AS builder
 
-ENV REFRESHED_AT=2022-07-06
+ENV REFRESHED_AT=2022-07-12
 
 LABEL Name="senzing/redoer" \
       Maintainer="support@senzing.com" \
@@ -44,8 +44,8 @@ RUN pip3 install --upgrade pip \
 # Install senzing_governor.py.
 
 RUN curl -X GET \
-    --output /opt/senzing/g2/sdk/python/senzing_governor.py \
-    https://raw.githubusercontent.com/Senzing/governor-postgresql-transaction-id/main/senzing_governor.py
+      --output /opt/senzing/g2/sdk/python/senzing_governor.py \
+      https://raw.githubusercontent.com/Senzing/governor-postgresql-transaction-id/main/senzing_governor.py
 
 # -----------------------------------------------------------------------------
 # Stage: Final
@@ -55,7 +55,7 @@ RUN curl -X GET \
 
 FROM ${BASE_IMAGE} AS runner
 
-ENV REFRESHED_AT=2022-07-06
+ENV REFRESHED_AT=2022-07-12
 
 LABEL Name="senzing/redoer" \
       Maintainer="support@senzing.com" \
