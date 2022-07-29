@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.0.2] - 2022-07-29
 
-### Changed in 2.0.1
+### Changed in 2.0.2
 
 - Changed from `SENZING_AZURE_CONNECTION_STRING` to `SENZING_AZURE_QUEUE_CONNECTION_STRING` for clarity
 
