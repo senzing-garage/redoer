@@ -62,9 +62,9 @@ except Exception:
 # Metadata
 
 __all__ = []
-__version__ = "2.0.1"  # See https://www.python.org/dev/peps/pep-0396/
+__version__ = "2.0.2"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2022-07-20'
+__updated__ = '2022-07-29'
 
 SENZING_PRODUCT_ID = "5010"  # See https://github.com/Senzing/knowledge-base/blob/main/lists/senzing-product-ids.md
 LOG_FORMAT = '%(asctime)s %(message)s'
@@ -85,11 +85,6 @@ RESERVED_CHARACTER_LIST = [';', ',', '/', '?', ':', '@', '=', '&']
 # 1) Command line options, 2) Environment variables, 3) Configuration files, 4) Default values
 
 CONFIGURATION_LOCATOR = {
-    "azure_connection_string": {
-        "default": None,
-        "env": "SENZING_AZURE_CONNECTION_STRING",
-        "cli": "azure-connection-string"
-    },
     "azure_failure_connection_string": {
         "default": None,
         "env": "SENZING_AZURE_FAILURE_CONNECTION_STRING",
@@ -109,6 +104,11 @@ CONFIGURATION_LOCATOR = {
         "default": None,
         "env": "SENZING_AZURE_INFO_QUEUE_NAME",
         "cli": "azure-info-queue-name"
+    },
+    "azure_queue_connection_string": {
+        "default": None,
+        "env": "SENZING_AZURE_QUEUE_CONNECTION_STRING",
+        "cli": "azure-queue-connection-string"
     },
     "azure_queue_name": {
         "default": None,
@@ -536,9 +536,9 @@ def get_parser():
 
     argument_aspects = {
         "azure-queue": {
-            "--azure-connection-string": {
-                "dest": "azure_connection_string",
-                "metavar": "SENZING_AZURE_CONNECTION_STRING",
+            "--azure-queue-connection-string": {
+                "dest": "azure_queue_connection_string",
+                "metavar": "SENZING_AZURE_QUEUE_CONNECTION_STRING",
                 "help": "Azure Queue connection string. Default: none"
             },
             "--azure-queue-name": {
@@ -1790,7 +1790,7 @@ class InputAzureQueueMixin():
 
     def __init__(self, *args, **kwargs):
         logging.debug(message_debug(996, threading.current_thread().name, "InputAzureQueueMixin"))
-        connection_string = self.config.get("azure_connection_string")
+        connection_string = self.config.get("azure_queue_connection_string")
         queue_name = self.config.get("azure_queue_name")
 
         # Create objects.
@@ -2188,7 +2188,7 @@ class ExecuteWriteToAzureQueueMixin():
 
     def __init__(self, *args, **kwargs):
         logging.debug(message_debug(996, threading.current_thread().name, "ExecuteWriteToAzureQueueMixin"))
-        connection_string = self.config.get("azure_connection_string")
+        connection_string = self.config.get("azure_queue_connection_string")
         queue_name = self.config.get("azure_queue_name")
 
         # Create objects.
