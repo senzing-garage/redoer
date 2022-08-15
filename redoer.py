@@ -201,7 +201,7 @@ CONFIGURATION_LOCATOR = {
         "cli": "log-level-parameter"
     },
     "log_license_period_in_seconds": {
-        "default": 60 * 60 * 24,
+        "default": 60 * 30,
         "env": "SENZING_LOG_LICENSE_PERIOD_IN_SECONDS",
         "cli": "log-license-period-in-seconds"
     },
@@ -3225,11 +3225,6 @@ def log_license(config):
     # Garbage collect g2_product.
 
     g2_product.destroy()
-
-    # If license has expired, exit with error.
-
-    if remaining_time.days < 0:
-        exit_error(885)
 
 # -----------------------------------------------------------------------------
 # redo templates
