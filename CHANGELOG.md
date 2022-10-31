@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.1.3] - 2022-10-27
 
-### Changed in 2.1.2
+### Changed in 2.1.3
 
 - In `Dockerfile`, updated FROM instruction to `senzing/senzingapi-tools:3.3.2`
 
