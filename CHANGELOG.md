@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 [markdownlint](https://dlaa.me/markdownlint/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.4] - 2023-01-03
+
+### Changed in 2.1.4
+
+- Fixed issue with determining error messages for database connection errors
+
 ## [2.1.3] - 2022-10-27
 
 ### Changed in 2.1.3
