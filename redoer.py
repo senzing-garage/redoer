@@ -62,9 +62,9 @@ except Exception:
 # Metadata
 
 __all__ = []
-__version__ = "2.1.3"  # See https://www.python.org/dev/peps/pep-0396/
+__version__ = "2.1.4"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
-__updated__ = '2022-10-31'
+__updated__ = '2023-01-03'
 
 SENZING_PRODUCT_ID = "5010"  # See https://github.com/Senzing/knowledge-base/blob/main/lists/senzing-product-ids.md
 LOG_FORMAT = '%(asctime)s %(message)s'
@@ -2091,7 +2091,7 @@ class ExecuteMixin():
             # failed connection exception.
 
             logging.error(message_error(830, redo_record, err))
-            if is_db_connection_error(err.args[0]):
+            if is_db_connection_error(str(err)):
                 logging.warning(message_warning(710, threading.current_thread().name, err))
                 return False
             if self.is_g2_default_configuration_changed():
@@ -2149,7 +2149,7 @@ class ExecuteWithInfoMixin():
             # OT-TODO: replace this error handling in the future when G2 throws dedicated
             # failed connection exception.
             logging.error(message_error(832, redo_record, err))
-            if is_db_connection_error(err.args[0]):
+            if is_db_connection_error(str(err)):
                 logging.warning(message_warning(710, threading.current_thread().name, err))
                 return False
             if self.is_g2_default_configuration_changed():
@@ -2767,7 +2767,7 @@ class QueueRedoRecordsThread(threading.Thread):
                 # OT-TODO: replace this error handling in the future when G2 throws dedicated
                 # failed connection exception.
                 logging.error(message_error(834, err))
-                if is_db_connection_error(err.args[0]) and retry_count < redo_retry_limit:
+                if is_db_connection_error(str(err)) and retry_count < redo_retry_limit:
                     retry_count += 1
                     logging.warning(message_warning(704, err, redo_retry_sleep_time_in_seconds))
                     time.sleep(redo_retry_sleep_time_in_seconds)
