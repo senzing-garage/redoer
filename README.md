@@ -63,7 +63,6 @@ To see the options for a subcommand, run commands like:
     1. [Run command](#run-command)
 1. [Demonstrate using Docker](#demonstrate-using-docker)
     1. [Prerequisites for Docker](#prerequisites-for-docker)
-    1. [Docker volumes](#docker-volumes)
     1. [Database support](#database-support)
     1. [External database](#external-database)
     1. [Run Docker container](#run-docker-container)
@@ -115,8 +114,6 @@ These are "one-time tasks" which may already have been completed.
 1. Install Python dependencies:
     1. See [requirements.txt](requirements.txt) for list
         1. [Installation hints](https://github.com/Senzing/knowledge-base/blob/main/HOWTO/install-python-dependencies.md)
-1. The following software programs need to be installed:
-    1. [senzingapi](https://github.com/Senzing/knowledge-base/blob/main/HOWTO/install-senzing-api.md)
 1. :thinking: **Optional:**  Some databases need additional support.
    For other databases, this step may be skipped.
     1. **Db2:** See
@@ -215,47 +212,6 @@ These are "one-time tasks" which may already have been completed.
 
 1. The following software programs need to be installed:
     1. [docker](https://github.com/Senzing/knowledge-base/blob/main/WHATIS/docker.md)
-
-### Docker volumes
-
-Senzing Docker images follow the [Linux File Hierarchy Standard](https://refspecs.linuxfoundation.org/FHS_3.0/fhs-3.0.pdf).
-Inside the Docker container, Senzing artifacts will be located in `/opt/senzing`, `/etc/opt/senzing`, and `/var/opt/senzing`.
-
-1. :pencil2: Specify the directory containing the Senzing installation on the host system
-   (i.e. *outside* the Docker container).
-   Use the same `SENZING_VOLUME` value used when performing
-   [Prerequisites for Docker](#prerequisites-for-docker).
-   Example:
-
-    ```console
-    export SENZING_VOLUME=/opt/my-senzing
-    ```
-
-    1. :warning:
-       **macOS** - [File sharing](https://github.com/Senzing/knowledge-base/blob/main/HOWTO/share-directories-with-docker.md#macos)
-       must be enabled for `SENZING_VOLUME`.
-    1. :warning:
-       **Windows** - [File sharing](https://github.com/Senzing/knowledge-base/blob/main/HOWTO/share-directories-with-docker.md#windows)
-       must be enabled for `SENZING_VOLUME`.
-
-1. Identify the `data_version`, `etc`, `g2`, and `var` directories.
-   Example:
-
-    ```console
-    export SENZING_DATA_VERSION_DIR=${SENZING_VOLUME}/data/3.0.0
-    export SENZING_ETC_DIR=${SENZING_VOLUME}/etc
-    export SENZING_G2_DIR=${SENZING_VOLUME}/g2
-    export SENZING_VAR_DIR=${SENZING_VOLUME}/var
-    ```
-
-1. Here's a simple test to see if `SENZING_G2_DIR` and `SENZING_DATA_VERSION_DIR` are correct.
-   The following commands should return file contents.
-   Example:
-
-    ```console
-    cat ${SENZING_G2_DIR}/g2BuildVersion.json
-    cat ${SENZING_DATA_VERSION_DIR}/libpostal/data_version
-    ```
 
 ### Database support
 
