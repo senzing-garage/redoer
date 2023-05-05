@@ -55,7 +55,6 @@ To see the options for a subcommand, run commands like:
 
 1. [Preamble](#preamble)
     1. [Legend](#legend)
-1. [Related artifacts](#related-artifacts)
 1. [Expectations](#expectations)
 1. [Demonstrate using Command Line Interface](#demonstrate-using-command-line-interface)
     1. [Prerequisites for CLI](#prerequisites-for-cli)
@@ -65,21 +64,10 @@ To see the options for a subcommand, run commands like:
 1. [Demonstrate using Docker](#demonstrate-using-docker)
     1. [Prerequisites for Docker](#prerequisites-for-docker)
     1. [Docker volumes](#docker-volumes)
-    1. [Docker network](#docker-network)
-    1. [Docker user](#docker-user)
     1. [Database support](#database-support)
     1. [External database](#external-database)
     1. [Run Docker container](#run-docker-container)
-1. [Develop](#develop)
-    1. [Prerequisites for development](#prerequisites-for-development)
-    1. [Clone repository](#clone-repository)
-    1. [Build Docker image](#build-docker-image)
-1. [Examples](#examples)
-    1. [Examples of CLI](#examples-of-cli)
-    1. [Examples of Docker](#examples-of-docker)
-1. [Advanced](#advanced)
-    1. [Configuration](#configuration)
-1. [Errors](#errors)
+1. [Configuration](#configuration)
 1. [References](#references)
 1. [License](#license)
 
@@ -102,11 +90,6 @@ describing where we can improve.   Now on with the show...
    Perhaps it's an optional step.
 1. :pencil2: - A "pencil" icon means that the instructions may need modification before performing.
 1. :warning: - A "warning" icon means that something tricky is happening, so pay attention.
-
-## Related artifacts
-
-1. [DockerHub](https://hub.docker.com/r/senzing/redoer)
-1. [Helm Chart](https://github.com/Senzing/charts/tree/main/charts/senzing-redoer)
 
 ## Expectations
 
@@ -141,7 +124,6 @@ These are "one-time tasks" which may already have been completed.
     1. **MS SQL:** See
        [Support MS SQL](https://github.com/Senzing/knowledge-base/blob/main/HOWTO/support-mssql.md).
 1. [Configure Senzing database](https://github.com/Senzing/knowledge-base/blob/main/HOWTO/configure-senzing-database.md)
-1. [Configure Senzing](https://github.com/Senzing/knowledge-base/blob/main/HOWTO/configure-senzing.md)
 
 ### Download
 
@@ -173,7 +155,7 @@ These are "one-time tasks" which may already have been completed.
         ```
 
 1. :thinking: **Alternative:** The entire git repository can be downloaded by following instructions at
-   [Clone repository](#clone-repository)
+   [Clone repository](docs/development.md#clone-repository)
 
 ### Environment variables for CLI
 
@@ -224,8 +206,6 @@ These are "one-time tasks" which may already have been completed.
    ${SENZING_DOWNLOAD_FILE} --help
    ```
 
-1. For more examples of use, see [Examples of CLI](#examples-of-cli).
-
 ## Demonstrate using Docker
 
 ### Prerequisites for Docker
@@ -234,12 +214,7 @@ These are "one-time tasks" which may already have been completed.
 These are "one-time tasks" which may already have been completed.
 
 1. The following software programs need to be installed:
-    1. [docker](https://github.com/Senzing/knowledge-base/blob/main/HOWTO/install-docker.md)
-1. [Install Senzing using Docker](https://github.com/Senzing/knowledge-base/blob/main/HOWTO/install-senzing-using-docker.md)
-    1. If using Docker with a previous "system install" of Senzing,
-       see [how to use Docker with system install](https://github.com/Senzing/knowledge-base/blob/main/HOWTO/use-docker-with-system-install.md).
-1. [Configure Senzing database using Docker](https://github.com/Senzing/knowledge-base/blob/main/HOWTO/configure-senzing-database-using-docker.md)
-1. [Configure Senzing using Docker](https://github.com/Senzing/knowledge-base/blob/main/HOWTO/configure-senzing-using-docker.md)
+    1. [docker](https://github.com/Senzing/knowledge-base/blob/main/WHATIS/docker.md)
 
 ### Docker volumes
 
@@ -273,10 +248,6 @@ Inside the Docker container, Senzing artifacts will be located in `/opt/senzing`
     export SENZING_VAR_DIR=${SENZING_VOLUME}/var
     ```
 
-    *Note:* If using a "system install",
-    see [how to use Docker with system install](https://github.com/Senzing/knowledge-base/blob/main/HOWTO/use-docker-with-system-install.md).
-    for how to set environment variables.
-
 1. Here's a simple test to see if `SENZING_G2_DIR` and `SENZING_DATA_VERSION_DIR` are correct.
    The following commands should return file contents.
    Example:
@@ -284,57 +255,6 @@ Inside the Docker container, Senzing artifacts will be located in `/opt/senzing`
     ```console
     cat ${SENZING_G2_DIR}/g2BuildVersion.json
     cat ${SENZING_DATA_VERSION_DIR}/libpostal/data_version
-    ```
-
-### Docker network
-
-:thinking: **Optional:**  Use if Docker container is part of a Docker network.
-
-1. List Docker networks.
-   Example:
-
-    ```console
-    sudo docker network ls
-    ```
-
-1. :pencil2: Specify Docker network.
-   Choose value from NAME column of `docker network ls`.
-   Example:
-
-    ```console
-    export SENZING_NETWORK=*nameofthe_network*
-    ```
-
-1. Construct parameter for `docker run`.
-   Example:
-
-    ```console
-    export SENZING_NETWORK_PARAMETER="--net ${SENZING_NETWORK}"
-    ```
-
-### Docker user
-
-:thinking: **Optional:**  The Docker container runs as "USER 1001".
-Use if a different userid (UID) is required.
-
-1. :pencil2: Identify user.
-    1. **Example #1:** Use specific UID. User "0" is `root`.
-
-        ```console
-        export SENZING_RUNAS_USER="0"
-        ```
-
-    1. **Example #2:** Use current user.
-
-        ```console
-        export SENZING_RUNAS_USER=$(id -u)
-        ```
-
-1. Construct parameter for `docker run`.
-   Example:
-
-    ```console
-    export SENZING_RUNAS_USER_PARAMETER="--user ${SENZING_RUNAS_USER}"
     ```
 
 ### Database support
@@ -399,109 +319,28 @@ Unset `*_PARAMETER` environment variables have no effect on the
 
     ```console
     sudo docker run \
-      --env SENZING_SUBCOMMAND="${SENZING_SUBCOMMAND}" \
+      --env SENZING_SUBCOMMAND \
       --interactive \
       --rm \
       --tty \
-      --volume ${SENZING_DATA_VERSION_DIR}:/opt/senzing/data \
-      --volume ${SENZING_ETC_DIR}:/etc/opt/senzing \
-      --volume ${SENZING_G2_DIR}:/opt/senzing/g2 \
-      --volume ${SENZING_VAR_DIR}:/var/opt/senzing \
       ${SENZING_DATABASE_URL_PARAMETER} \
-      ${SENZING_NETWORK_PARAMETER} \
       ${SENZING_OPT_IBM_DIR_PARAMETER} \
       ${SENZING_OPT_MICROSOFT_DIR_PARAMETER} \
-      ${SENZING_RUNAS_USER_PARAMETER} \
       senzing/redoer
     ```
 
-1. For more examples of use, see [Examples of Docker](#examples-of-docker).
-
-## Develop
-
-The following instructions are used when modifying and building the Docker image.
-
-### Prerequisites for development
-
-:thinking: The following tasks need to be complete before proceeding.
-These are "one-time tasks" which may already have been completed.
-
-1. The following software programs need to be installed:
-    1. [git](https://github.com/Senzing/knowledge-base/blob/main/HOWTO/install-git.md)
-    1. [make](https://github.com/Senzing/knowledge-base/blob/main/HOWTO/install-make.md)
-    1. [docker](https://github.com/Senzing/knowledge-base/blob/main/HOWTO/install-docker.md)
-
-### Clone repository
-
-For more information on environment variables,
-see [Environment Variables](https://github.com/Senzing/knowledge-base/blob/main/lists/environment-variables.md).
-
-1. Set these environment variable values:
-
-    ```console
-    export GIT_ACCOUNT=senzing
-    export GIT_REPOSITORY=redoer
-    export GIT_ACCOUNT_DIR=~/${GIT_ACCOUNT}.git
-    export GIT_REPOSITORY_DIR="${GIT_ACCOUNT_DIR}/${GIT_REPOSITORY}"
-    ```
-
-1. Using the environment variables values just set, follow steps in [clone-repository](https://github.com/Senzing/knowledge-base/blob/main/HOWTO/clone-repository.md) to install the Git repository.
-
-### Build Docker image
-
-1. **Option #1:** Using `docker` command and GitHub.
-
-    ```console
-    sudo docker build \
-      --tag senzing/redoer \
-      https://github.com/senzing/redoer.git#main
-    ```
-
-1. **Option #2:** Using `docker` command and local repository.
-
-    ```console
-    cd ${GIT_REPOSITORY_DIR}
-    sudo docker build --tag senzing/redoer .
-    ```
-
-1. **Option #3:** Using `make` command.
-
-    ```console
-    cd ${GIT_REPOSITORY_DIR}
-    sudo make docker-build
-    ```
-
-    Note: `sudo make docker-build-development-cache` can be used to create cached Docker layers.
-
-## Examples
-
-### Examples of CLI
-
-The following examples require initialization described in
-[Demonstrate using Command Line Interface](#demonstrate-using-command-line-interface).
-
-### Examples of Docker
-
-The following examples require initialization described in
-[Demonstrate using Docker](#demonstrate-using-docker).
-
-## Advanced
-
-### Configuration
+## Configuration
 
 Configuration values specified by environment variable or command line parameter.
 
 - **[SENZING_CONFIG_PATH](https://github.com/Senzing/knowledge-base/blob/main/lists/environment-variables.md#senzing_config_path)**
 - **[SENZING_DATABASE_URL](https://github.com/Senzing/knowledge-base/blob/main/lists/environment-variables.md#senzing_database_url)**
 - **[SENZING_DATA_SOURCE](https://github.com/Senzing/knowledge-base/blob/main/lists/environment-variables.md#senzing_data_source)**
-- **[SENZING_DATA_VERSION_DIR](https://github.com/Senzing/knowledge-base/blob/main/lists/environment-variables.md#senzing_data_version_dir)**
 - **[SENZING_DEBUG](https://github.com/Senzing/knowledge-base/blob/main/lists/environment-variables.md#senzing_debug)**
 - **[SENZING_DELAY_IN_SECONDS](https://github.com/Senzing/knowledge-base/blob/main/lists/environment-variables.md#senzing_delay_in_seconds)**
 - **[SENZING_ENGINE_CONFIGURATION_JSON](https://github.com/Senzing/knowledge-base/blob/main/lists/environment-variables.md#senzing_engine_configuration_json)**
-- **[SENZING_ETC_DIR](https://github.com/Senzing/knowledge-base/blob/main/lists/environment-variables.md#senzing_etc_dir)**
 - **[SENZING_EXIT_ON_THREAD_TERMINATION](https://github.com/Senzing/knowledge-base/blob/main/lists/environment-variables.md#senzing_exit_on_thread_termination)**
 - **[SENZING_EXPIRATION_WARNING_IN_DAYS](https://github.com/Senzing/knowledge-base/blob/main/lists/environment-variables.md#senzing_expiration_warning_in_days)**
-- **[SENZING_G2_DIR](https://github.com/Senzing/knowledge-base/blob/main/lists/environment-variables.md#senzing_g2_dir)**
 - **[SENZING_INPUT_URL](https://github.com/Senzing/knowledge-base/blob/main/lists/environment-variables.md#senzing_input_url)**
 - **[SENZING_KAFKA_BOOTSTRAP_SERVER](https://github.com/Senzing/knowledge-base/blob/main/lists/environment-variables.md#senzing_kafka_bootstrap_server)**
 - **[SENZING_KAFKA_FAILURE_BOOTSTRAP_SERVER](https://github.com/Senzing/knowledge-base/blob/main/lists/environment-variables.md#senzing_kafka_failure_bootstrap_server)**
@@ -552,13 +391,6 @@ Configuration values specified by environment variable or command line parameter
 - **[SENZING_SUBCOMMAND](https://github.com/Senzing/knowledge-base/blob/main/lists/environment-variables.md#senzing_subcommand)**
 - **[SENZING_SUPPORT_PATH](https://github.com/Senzing/knowledge-base/blob/main/lists/environment-variables.md#senzing_support_path)**
 - **[SENZING_THREADS_PER_PROCESS](https://github.com/Senzing/knowledge-base/blob/main/lists/environment-variables.md#senzing_threads_per_process)**
-- **[SENZING_VAR_DIR](https://github.com/Senzing/knowledge-base/blob/main/lists/environment-variables.md#senzing_var_dir)**
-
-## Errors
-
-1. See [docs/errors.md](docs/errors.md).
-
-## References
 
 ## License
 
@@ -580,3 +412,12 @@ along with any direct or indirect dependencies of the primary software being con
 As for any pre-built image usage,
 it is the image user's responsibility to ensure that any use of this image complies
 with any relevant licenses for all software contained within.
+
+## References
+
+1. [Development](docs/development.md)
+1. [Errors](docs/errors.md)
+1. [Examples](docs/examples.md)
+1. Related artifacts:
+    1. [DockerHub](https://hub.docker.com/r/senzing/redoer)
+    1. [Helm Chart](https://github.com/Senzing/charts/tree/main/charts/senzing-redoer)
