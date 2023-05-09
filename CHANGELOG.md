@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 [markdownlint](https://dlaa.me/markdownlint/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.7] - 2023-05-09
+
+### Changed in 2.1.7
+
+- In `Dockerfile`, updated FROM instruction to `senzing/senzingapi-runtime:3.5.2`
+- In `requirements.txt`, updated:
+  - azure-servicebus==7.10.0
+  - boto3==1.26.131
+  - confluent-kafka==2.1.1
+  - pika==1.3.2
 
 ## [2.1.6] - 2023-04-03
 
