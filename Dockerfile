@@ -10,7 +10,7 @@ ENV REFRESHED_AT=2023-06-15
 
 LABEL Name="senzing/redoer" \
       Maintainer="support@senzing.com" \
-      Version="2.1.7"
+      Version="2.1.8"
 
 # Run as "root" for system installation.
 
@@ -59,7 +59,7 @@ ENV REFRESHED_AT=2023-06-15
 
 LABEL Name="senzing/redoer" \
       Maintainer="support@senzing.com" \
-      Version="2.1.7"
+      Version="2.1.8"
 
 # Define health check.
 
