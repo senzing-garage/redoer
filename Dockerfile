@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=senzing/senzingapi-runtime:3.6.0
+ARG BASE_IMAGE=senzing/senzingapi-runtime:3.7.1
 
 # -----------------------------------------------------------------------------
 # Stage: builder
@@ -6,11 +6,11 @@ ARG BASE_IMAGE=senzing/senzingapi-runtime:3.6.0
 
 FROM ${BASE_IMAGE} AS builder
 
-ENV REFRESHED_AT=2023-06-29
+ENV REFRESHED_AT=2023-09-29
 
 LABEL Name="senzing/redoer" \
       Maintainer="support@senzing.com" \
-      Version="2.1.9"
+      Version="2.1.10"
 
 # Run as "root" for system installation.
 
@@ -55,11 +55,11 @@ RUN curl -X GET \
 
 FROM ${BASE_IMAGE} AS runner
 
-ENV REFRESHED_AT=2023-06-29
+ENV REFRESHED_AT=2023-09-29
 
 LABEL Name="senzing/redoer" \
       Maintainer="support@senzing.com" \
-      Version="2.1.9"
+      Version="2.1.10"
 
 # Define health check.
 
