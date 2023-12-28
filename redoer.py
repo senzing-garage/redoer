@@ -66,7 +66,7 @@ __version__ = "2.1.11"  # See https://www.python.org/dev/peps/pep-0396/
 __date__ = '2020-01-15'
 __updated__ = '2023-11-15'
 
-SENZING_PRODUCT_ID = "5010"  # See https://github.com/Senzing/knowledge-base/blob/main/lists/senzing-product-ids.md
+SENZING_PRODUCT_ID = "5010"  # See https://github.com/senzing-garage/knowledge-base/blob/main/lists/senzing-product-ids.md
 LOG_FORMAT = '%(asctime)s %(message)s'
 
 # Working with bytes.
@@ -839,7 +839,7 @@ def get_parser():
 
     # Parse command line arguments.
 
-    parser = argparse.ArgumentParser(prog="redoer.py", description="Process Senzing redo records. For more information, see https://github.com/Senzing/redoer")
+    parser = argparse.ArgumentParser(prog="redoer.py", description="Process Senzing redo records. For more information, see https://github.com/senzing-garage/redoer")
     subparsers = parser.add_subparsers(dest='subcommand', help='Subcommands (SENZING_SUBCOMMAND):')
 
     for subcommand_key, subcommand_values in subcommands.items():
@@ -895,7 +895,7 @@ MESSAGE_DICTIONARY = {
     "190": "AWS SQS Long-polling: No messages from {0}",
     "203": "          WARNING: License will expire soon. Only {0} days left.",
     "292": "Configuration change detected.  Old: {0} New: {1}",
-    "293": "For information on warnings and errors, see https://github.com/Senzing/stream-loader#errors",
+    "293": "For information on warnings and errors, see https://github.com/senzing-garage/stream-loader#errors",
     "294": "Version: {0}  Updated: {1}",
     "295": "Sleeping infinitely.",
     "296": "Sleeping {0} seconds.",
