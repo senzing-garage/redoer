@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 [markdownlint](https://dlaa.me/markdownlint/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.12] - 2024-03-18
+
+### Changed in 2.1.12
+
+- In `Dockerfile`, updated FROM instruction to `senzing/senzingapi-runtime:3.9.0`
+- In `requirements.txt`, updated:
+  - azure-servicebus==7.12.0
+  - boto3==1.34.63
+
 ## [2.1.11] - 2023-11-14
 
 ### Changed in 2.1.11
