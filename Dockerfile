@@ -55,7 +55,7 @@ ENV REFRESHED_AT=2024-06-24
 
 LABEL Name="senzing/redoer" \
   Maintainer="support@senzing.com" \
-  Version="2.1.13"
+  Version="2.1.14"
 
 # Define health check.
 
