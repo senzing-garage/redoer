@@ -313,7 +313,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added in 1.3.2
 
-- Support for Senzing Govnernor
+- Support for Senzing Governor
 
 ## [1.3.1] - 2020-07-23
 
@@ -359,5 +359,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added to 1.0.0
 
-- Initial functionality:  Pull from Senzing redo queue via `G2Engine.getRedoRecord()`, push to senzing `G2Engine.process()`.
-- Has 3 types of threads:  Monitor, Pull from Senzing Redo queue, Push to Senzing "process".
+- Initial functionality: Pull from Senzing redo queue via `G2Engine.getRedoRecord()`, push to senzing `G2Engine.process()`.
+- Has 3 types of threads: Monitor, Pull from Senzing Redo queue, Push to Senzing "process".
